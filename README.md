@@ -3,7 +3,7 @@
 > 🚀 **免费 · 专业 · 零打扰** —— 桌面级 A 股实时行情监控工具
 
 <p align="center">
-  <img src="public/qrcode.jpg" width="200" alt="微信运维群二维码" />
+  <img src="public/qrcode.png" width="200" alt="微信运维群二维码" />
   <br/>
   <sub>👆 扫码加入用户交流群</sub>
 </p>
