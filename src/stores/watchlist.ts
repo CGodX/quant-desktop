@@ -67,6 +67,10 @@ export const useWatchlistStore = defineStore('watchlist', () => {
       // 连点（关→开）时，先发的请求后失败会用旧值覆盖后发的意图，且没有
       // 任何环节会再校正（主窗口不监听 watchlist-changed，只有行情条听）。
       await fetchWatchlist();
+      // fetchWatchlist 自身失败会置位 error，让整张自选表被错误页替换——
+      // 单次开关失败不值得清空表格（两次失败访问同一数据库，是相关的），
+      // 复位以免升级为全局错误态。失败详情已由 fetchWatchlist 内部记日志。
+      error.value = null;
       console.error('[watchlist] setTickerEnabled failed:', e);
     }
   }
