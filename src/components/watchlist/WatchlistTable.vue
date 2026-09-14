@@ -135,7 +135,6 @@ const columns: DataTableColumns<WatchItem> = [
   },
   {
     title: '名称', key: 'name', width: 168,
-    sorter: (a: WatchItem, b: WatchItem) => a.name.localeCompare(b.name),
     render(row) {
       return h('div', { class: 'name-cell' }, [
         h(MarketTag, { code: row.code, category: cnCategory(row.code) }),
