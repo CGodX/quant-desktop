@@ -241,7 +241,10 @@ async function handleClick() {
         >{{ item.changePct >= 0 ? '+' : '' }}{{ item.changePct.toFixed(2) }}%</span>
       </div>
     </template>
-    <div v-else class="ticker-empty">暂无自选</div>
+    <!-- 区分两种为空：诚然没有自选，与有自选但全部关闭了播报 -->
+    <div v-else class="ticker-empty">
+      {{ watchlist.items.length === 0 ? '暂无自选' : '暂未设置播报标的' }}
+    </div>
   </div>
 </template>
 
