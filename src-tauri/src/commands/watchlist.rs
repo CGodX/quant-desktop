@@ -36,6 +36,21 @@ pub fn remove_watch(
 }
 
 #[tauri::command]
+pub fn set_watch_ticker_enabled(
+    app_handle: tauri::AppHandle,
+    db: State<'_, Arc<Database>>,
+    id: i64,
+    enabled: bool,
+) -> Result<(), String> {
+    db.set_watch_ticker_enabled(id, enabled)
+        .map_err(|e| e.to_string())?;
+    // 复用已有的 watchlist-changed 事件：行情条窗口正是靠它刷新列表，
+    // 因此开关一拨即在行情条生效，无需新增事件。
+    let _ = app_handle.emit("watchlist-changed", ());
+    Ok(())
+}
+
+#[tauri::command]
 pub fn reorder_watch(
     app_handle: tauri::AppHandle,
     db: State<'_, Arc<Database>>,

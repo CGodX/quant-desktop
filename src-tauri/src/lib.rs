@@ -614,6 +614,7 @@ pub fn run() {
             commands::watchlist::get_watchlist,
             commands::watchlist::add_watch,
             commands::watchlist::remove_watch,
+            commands::watchlist::set_watch_ticker_enabled,
             commands::watchlist::reorder_watch,
             commands::watchlist::move_watch_top,
             commands::watchlist::move_watch_up,
