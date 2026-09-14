@@ -39,6 +39,8 @@ export interface WatchItem {
   name: string;
   sort_order: number;
   added_at: string;
+  /** 是否参与行情条滚动播报。新增自选默认 true。 */
+  ticker_enabled: boolean;
 }
 
 export interface Level {

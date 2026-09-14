@@ -44,5 +44,29 @@ export const useWatchlistStore = defineStore('watchlist', () => {
     }
   }
 
-  return { items, loading, error, fetchWatchlist, addStock, removeStock };
+  /**
+   * 切换某个自选的行情条播报开关。
+   *
+   * 乐观更新：先改本地再发 IPC，避免拨动开关时有可见延迟；失败回滚。
+   * 不复用 `error` 字段 —— 该字段会让整张自选表被错误态替换
+   * （WatchlistTable 的 `v-if="watchlist.error"`），单次开关失败不值得
+   * 清空表格，因此只回滚 + 记日志。
+   *
+   * 按 id 查找而不是接收行对象引用，避免依赖 naive-ui 是否原样透传
+   * data 中的响应式代理。
+   */
+  async function setTickerEnabled(id: number, enabled: boolean) {
+    const item = items.value.find((i) => i.id === id);
+    if (!item) return;
+    const prev = item.ticker_enabled;
+    item.ticker_enabled = enabled;
+    try {
+      await invoke('set_watch_ticker_enabled', { id, enabled });
+    } catch (e) {
+      item.ticker_enabled = prev;
+      console.error('[watchlist] setTickerEnabled failed:', e);
+    }
+  }
+
+  return { items, loading, error, fetchWatchlist, addStock, removeStock, setTickerEnabled };
 });
