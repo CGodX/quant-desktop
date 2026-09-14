@@ -17,6 +17,7 @@ impl Database {
         let db = Self { conn: Mutex::new(conn) };
         db.migrate()?;
         db.migrate_watchlist_codes()?;
+        db.migrate_ticker_enabled()?;
         db.init_defaults()?;
         Ok(db)
     }
@@ -31,6 +32,7 @@ impl Database {
                 name        TEXT NOT NULL,
                 sort_order  INTEGER DEFAULT 0,
                 added_at    TEXT NOT NULL,
+                ticker_enabled INTEGER NOT NULL DEFAULT 1,
                 UNIQUE(code, market)
             );
             CREATE TABLE IF NOT EXISTS settings (
@@ -96,6 +98,35 @@ impl Database {
         Ok(())
     }
 
+    /// 幂等迁移：为历史库补上 `ticker_enabled` 列。
+    ///
+    /// `CREATE TABLE IF NOT EXISTS` 对已存在的表不会加列，所以老库需要单独
+    /// `ALTER TABLE`。SQLite 不支持 `ADD COLUMN IF NOT EXISTS`，重复执行会报
+    /// "duplicate column name: ticker_enabled"，因此先用 PRAGMA 探测。
+    ///
+    /// 两点依赖的 SQLite 语义：
+    /// - `ADD COLUMN` 是纯元数据操作，不重写表、不复制数据，任意规模均是 O(1)；
+    ///   已有行读出时返回默认值，故历史自选全部默认开启。
+    /// - `NOT NULL` 在 `ADD COLUMN` 上合法，前提是带非 NULL 默认值。
+    fn migrate_ticker_enabled(&self) -> SqliteResult<()> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let mut stmt = conn.prepare("PRAGMA table_info(watchlist)")?;
+        let exists = stmt
+            .query_map([], |row| row.get::<_, String>(1))?
+            .collect::<SqliteResult<Vec<_>>>()?
+            .iter()
+            .any(|name| name == "ticker_enabled");
+        drop(stmt);
+        if !exists {
+            conn.execute(
+                "ALTER TABLE watchlist ADD COLUMN ticker_enabled INTEGER NOT NULL DEFAULT 1",
+                [],
+            )?;
+            log::info!("Migration: added watchlist.ticker_enabled");
+        }
+        Ok(())
+    }
+
     /// Insert default settings values (default data source is Tencent)
     pub fn init_defaults(&self) -> SqliteResult<()> {
         let defaults = [
@@ -118,7 +149,7 @@ impl Database {
     pub fn get_watchlist(&self) -> SqliteResult<Vec<WatchItem>> {
         let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let mut stmt = conn.prepare(
-            "SELECT id, code, market, name, sort_order, added_at
+            "SELECT id, code, market, name, sort_order, added_at, ticker_enabled
              FROM watchlist ORDER BY sort_order ASC, id ASC"
         )?;
         let rows = stmt.query_map([], |row| {
@@ -129,6 +160,7 @@ impl Database {
                 name: row.get(3)?,
                 sort_order: row.get(4)?,
                 added_at: row.get(5)?,
+                ticker_enabled: row.get(6)?,
             })
         })?;
         rows.collect()
@@ -148,8 +180,8 @@ impl Database {
             .unwrap_or(-1);
         let now = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string();
         conn.execute(
-            "INSERT OR IGNORE INTO watchlist (code, market, name, sort_order, added_at)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
+            "INSERT OR IGNORE INTO watchlist (code, market, name, sort_order, added_at, ticker_enabled)
+             VALUES (?1, ?2, ?3, ?4, ?5, 1)",
             params![code, market, name, max_sort + 1, now],
         )?;
         Ok(())
@@ -160,6 +192,15 @@ impl Database {
         conn.execute(
             "DELETE FROM watchlist WHERE code = ?1 AND market = ?2",
             params![code, market],
+        )?;
+        Ok(())
+    }
+
+    pub fn set_watch_ticker_enabled(&self, id: i64, enabled: bool) -> SqliteResult<()> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        conn.execute(
+            "UPDATE watchlist SET ticker_enabled = ?1 WHERE id = ?2",
+            params![enabled, id],
         )?;
         Ok(())
     }
@@ -366,4 +407,147 @@ pub struct WatchItem {
     pub name: String,
     pub sort_order: i32,
     pub added_at: String,
+    /// 是否参与行情条（ticker 窗口）滚动播报。新行默认 true。
+    pub ticker_enabled: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static SEQ: AtomicU64 = AtomicU64::new(0);
+
+    /// 每个测试用独立的临时 app 目录，避免共享数据库文件互相干扰。
+    /// 不加 `tempfile` 依赖，用进程 id + 纳秒 + 自增序号保证唯一。
+    fn temp_app_dir(tag: &str) -> PathBuf {
+        let seq = SEQ.fetch_add(1, Ordering::SeqCst);
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "qd-test-{}-{}-{}-{}",
+            tag,
+            std::process::id(),
+            nanos,
+            seq
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// 写入一份旧版本 schema 的数据库（watchlist 无 ticker_enabled 列），
+    /// 用于模拟「用户从旧版本升级上来」的路径。
+    fn seed_legacy_db(dir: &Path) {
+        let conn = Connection::open(dir.join("quant-desktop.db")).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE watchlist (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                code        TEXT NOT NULL,
+                market      TEXT NOT NULL DEFAULT 'CN',
+                name        TEXT NOT NULL,
+                sort_order  INTEGER DEFAULT 0,
+                added_at    TEXT NOT NULL,
+                UNIQUE(code, market)
+            );
+            INSERT INTO watchlist (code, market, name, sort_order, added_at)
+            VALUES ('sh600519', 'CN', '贵州茅台', 0, '2026-01-01T00:00:00');",
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn fresh_db_add_watch_defaults_ticker_enabled() {
+        let dir = temp_app_dir("fresh");
+        let db = Database::open(dir.clone()).unwrap();
+        db.add_watch("sh600519", "CN", "贵州茅台").unwrap();
+
+        let items = db.get_watchlist().unwrap();
+        assert_eq!(items.len(), 1);
+        assert!(
+            items[0].ticker_enabled,
+            "全新安装下新增自选应默认开启行情条播报"
+        );
+
+        drop(db);
+        std::fs::remove_dir_all(&dir).expect("临时测试目录应可清理");
+    }
+
+    #[test]
+    fn legacy_db_migrates_and_defaults_enabled() {
+        let dir = temp_app_dir("legacy");
+        seed_legacy_db(&dir);
+
+        let db = Database::open(dir.clone()).unwrap();
+        let items = db.get_watchlist().unwrap();
+        assert_eq!(items.len(), 1, "迁移不应丢失历史自选");
+        assert_eq!(items[0].name, "贵州茅台");
+        assert_eq!(items[0].code, "sh600519");
+        assert!(
+            items[0].ticker_enabled,
+            "历史自选迁移后应默认开启行情条播报"
+        );
+
+        drop(db);
+        std::fs::remove_dir_all(&dir).expect("临时测试目录应可清理");
+    }
+
+    #[test]
+    fn ticker_enabled_migration_is_idempotent() {
+        let dir = temp_app_dir("idem");
+        seed_legacy_db(&dir);
+
+        // 第一次打开触发 ALTER TABLE
+        {
+            let _db = Database::open(dir.clone()).unwrap();
+        }
+        // 第二次打开列已存在，不应因 "duplicate column name" 报错
+        let db = Database::open(dir.clone()).unwrap();
+        db.add_watch("sz000001", "CN", "平安银行").unwrap();
+
+        let items = db.get_watchlist().unwrap();
+        assert_eq!(items.len(), 2);
+        assert!(items.iter().all(|i| i.ticker_enabled));
+
+        drop(db);
+        std::fs::remove_dir_all(&dir).expect("临时测试目录应可清理");
+    }
+
+    #[test]
+    fn set_ticker_enabled_persists_across_reopen() {
+        let dir = temp_app_dir("set");
+        let id = {
+            let db = Database::open(dir.clone()).unwrap();
+            db.add_watch("sh600519", "CN", "贵州茅台").unwrap();
+            let id = db.get_watchlist().unwrap()[0].id;
+            db.set_watch_ticker_enabled(id, false).unwrap();
+            assert!(!db.get_watchlist().unwrap()[0].ticker_enabled);
+            id
+        };
+
+        // 重开确认关闭状态已落盘
+        let db = Database::open(dir.clone()).unwrap();
+        let items = db.get_watchlist().unwrap();
+        assert_eq!(items[0].id, id);
+        assert!(
+            !items[0].ticker_enabled,
+            "关闭状态应持久化，不应被迁移重置为开启"
+        );
+
+        // 重新开启，覆盖 `params![enabled, id]` 的另一个方向
+        db.set_watch_ticker_enabled(id, true).unwrap();
+        assert!(db.get_watchlist().unwrap()[0].ticker_enabled);
+        drop(db);
+
+        // 再次重开确认重新开启后的 true 也已落盘
+        let db = Database::open(dir.clone()).unwrap();
+        let items = db.get_watchlist().unwrap();
+        assert_eq!(items[0].id, id);
+        assert!(items[0].ticker_enabled, "重新开启后的状态应持久化");
+
+        drop(db);
+        std::fs::remove_dir_all(&dir).expect("临时测试目录应可清理");
+    }
 }

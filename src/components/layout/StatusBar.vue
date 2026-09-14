@@ -11,6 +11,10 @@ const updater = useUpdaterStore();
 const { manualCheck } = useUpdateCheck();
 const appVersion = ref('');
 
+// 微信群二维码：使用 GitHub 在线地址，二维码过期后只需替换仓库中的图片文件即可，用户端无需重新打包升级。
+// 图片对应仓库路径为 public/qrcode.jpg，如你改存到其它路径，请同步修改下面的 URL。
+const QRCODE_URL = 'https://raw.githubusercontent.com/Leaderxin/quant-desktop/master/public/qrcode.png';
+
 const props = withDefaults(defineProps<{
   copyright?: string;
   contactEmail?: string;
@@ -18,8 +22,22 @@ const props = withDefaults(defineProps<{
 }>(), {
   copyright: '© 2026 Leaderxin',
   contactEmail: 'shazhoulen@outlook.com',
-  qrcodeSrc: '/qrcode.jpg',
+  qrcodeSrc: QRCODE_URL,
 });
+
+// 打包进安装包的本地兜底二维码（远程加载失败时回退用）
+const QRCODE_FALLBACK_URL = '/qrcode.png';
+// 当前实际展示的二维码地址：远程失败 → 回退本地旧图；本地也失败 → 显示占位提示
+const qrSrc = ref(props.qrcodeSrc);
+const qrFailed = ref(false);
+
+function onQrError() {
+  if (qrSrc.value !== QRCODE_FALLBACK_URL) {
+    qrSrc.value = QRCODE_FALLBACK_URL;
+  } else {
+    qrFailed.value = true;
+  }
+}
 
 onMounted(async () => {
   try {
@@ -108,12 +126,15 @@ onMounted(async () => {
           </button>
         </template>
         <div class="qr-popover">
-          <img
-            v-if="qrcodeSrc"
-            :src="qrcodeSrc"
-            alt="微信群二维码"
-            class="qr-image"
-          />
+          <template v-if="!qrFailed">
+            <img
+              :src="qrSrc"
+              alt="微信群二维码"
+              class="qr-image"
+              @error="onQrError"
+            />
+            <p v-if="qrSrc === QRCODE_FALLBACK_URL" style="font-size: 10px; color: var(--color-text-tertiary); margin-top: 6px;">在线二维码加载失败，已显示本地版本</p>
+          </template>
           <div v-else class="qr-placeholder">
             <svg viewBox="0 0 100 100" width="120" height="120" fill="none">
               <rect x="10" y="10" width="30" height="30" rx="2" stroke="currentColor" stroke-width="2"/>
@@ -136,7 +157,7 @@ onMounted(async () => {
               <rect x="44" y="60" width="12" height="12" fill="currentColor"/>
               <rect x="60" y="60" width="12" height="12" fill="currentColor"/>
             </svg>
-            <p style="font-size: 10px; color: var(--color-text-tertiary); margin-top: 6px;">请替换为微信群二维码</p>
+            <p style="font-size: 10px; color: var(--color-text-tertiary); margin-top: 6px;">二维码加载失败，请稍后重试</p>
           </div>
         </div>
       </NPopover>

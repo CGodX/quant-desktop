@@ -3,7 +3,7 @@
 > 🚀 **免费 · 专业 · 零打扰** —— 桌面级 A 股实时行情监控工具
 
 <p align="center">
-  <img src="public/qrcode.jpg" width="200" alt="微信运维群二维码" />
+  <img src="public/qrcode.png" width="200" alt="微信运维群二维码" />
   <br/>
   <sub>👆 扫码加入用户交流群</sub>
 </p>
@@ -191,5 +191,5 @@ QuantDesktop 的核心理念是 **"不打扰的看盘"**：
 ---
 
 <p align="center">
-  <b>QuantDesktop v1.4.5</b> — 免费实时 A 股看盘，从桌面开始。
+  <b>QuantDesktop v1.4.7</b> — 免费实时 A 股看盘，从桌面开始。
 </p>
