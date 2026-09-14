@@ -101,7 +101,7 @@ App.vue → NConfigProvider + NMessageProvider (theme overrides, accent=blue)
   └─ AppLayout.vue
        ├─ TopBar.vue (slogan, data source dropdown)
        ├─ IndexBar.vue → IndexCard.vue × N (market indices from quote store)
-       ├─ WatchlistTable.vue (NDataTable: sortable columns, right-click context menu, row-click expands detail)
+       ├─ WatchlistTable.vue (NDataTable: sortable columns, right-click context menu, row-click expands detail, trailing 行情条播报 switch column)
        │    ├─ AddStockDialog.vue (search with 300ms debounce + add modal)
        │    └─ StockDetail.vue (expanded row detail panel)
        │         ├─ ChartSwitcher.vue (toggle: 分时/日K/周K/月K)
@@ -112,7 +112,7 @@ App.vue → NConfigProvider + NMessageProvider (theme overrides, accent=blue)
        └─ StatusBar.vue (version, check update, theme toggle, auto-launch toggle, contact)
 ```
 
-**Ticker bar** ([TickerBar.vue](src/components/ticker/TickerBar.vue)) — Standalone mini Vue app that polls watchlist + settings, listens to quote events, and cycles through stocks two at a time with 3-second auto-scroll. Pauses on hover. Clicking restores the main window. Polls settings every 1s to sync theme changes.
+**Ticker bar** ([TickerBar.vue](src/components/ticker/TickerBar.vue)) — Standalone mini Vue app that polls watchlist + settings, listens to quote events, and cycles through stocks two at a time with 3-second auto-scroll. Pauses on hover. Clicking restores the main window. Polls settings every 1s to sync theme changes. 只播报 `ticker_enabled` 为开的自选，该开关可在主窗口自选表中逐只切换。
 
 **Composables**:
 - `useTauriEvent.ts` — Vue lifecycle wrapper for `listen()` (auto-cleanup on unmount)

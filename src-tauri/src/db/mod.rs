@@ -414,6 +414,7 @@ pub struct WatchItem {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static SEQ: AtomicU64 = AtomicU64::new(0);
@@ -439,7 +440,7 @@ mod tests {
 
     /// 写入一份旧版本 schema 的数据库（watchlist 无 ticker_enabled 列），
     /// 用于模拟「用户从旧版本升级上来」的路径。
-    fn seed_legacy_db(dir: &PathBuf) {
+    fn seed_legacy_db(dir: &Path) {
         let conn = Connection::open(dir.join("quant-desktop.db")).unwrap();
         conn.execute_batch(
             "CREATE TABLE watchlist (
@@ -470,7 +471,8 @@ mod tests {
             "全新安装下新增自选应默认开启行情条播报"
         );
 
-        let _ = std::fs::remove_dir_all(&dir);
+        drop(db);
+        std::fs::remove_dir_all(&dir).expect("临时测试目录应可清理");
     }
 
     #[test]
@@ -488,7 +490,8 @@ mod tests {
             "历史自选迁移后应默认开启行情条播报"
         );
 
-        let _ = std::fs::remove_dir_all(&dir);
+        drop(db);
+        std::fs::remove_dir_all(&dir).expect("临时测试目录应可清理");
     }
 
     #[test]
@@ -508,7 +511,8 @@ mod tests {
         assert_eq!(items.len(), 2);
         assert!(items.iter().all(|i| i.ticker_enabled));
 
-        let _ = std::fs::remove_dir_all(&dir);
+        drop(db);
+        std::fs::remove_dir_all(&dir).expect("临时测试目录应可清理");
     }
 
     #[test]
@@ -523,7 +527,7 @@ mod tests {
             id
         };
 
-        // 重开确认已落盘
+        // 重开确认关闭状态已落盘
         let db = Database::open(dir.clone()).unwrap();
         let items = db.get_watchlist().unwrap();
         assert_eq!(items[0].id, id);
@@ -532,6 +536,18 @@ mod tests {
             "关闭状态应持久化，不应被迁移重置为开启"
         );
 
-        let _ = std::fs::remove_dir_all(&dir);
+        // 重新开启，覆盖 `params![enabled, id]` 的另一个方向
+        db.set_watch_ticker_enabled(id, true).unwrap();
+        assert!(db.get_watchlist().unwrap()[0].ticker_enabled);
+        drop(db);
+
+        // 再次重开确认重新开启后的 true 也已落盘
+        let db = Database::open(dir.clone()).unwrap();
+        let items = db.get_watchlist().unwrap();
+        assert_eq!(items[0].id, id);
+        assert!(items[0].ticker_enabled, "重新开启后的状态应持久化");
+
+        drop(db);
+        std::fs::remove_dir_all(&dir).expect("临时测试目录应可清理");
     }
 }

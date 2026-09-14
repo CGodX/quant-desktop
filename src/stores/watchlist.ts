@@ -58,12 +58,14 @@ export const useWatchlistStore = defineStore('watchlist', () => {
   async function setTickerEnabled(id: number, enabled: boolean) {
     const item = items.value.find((i) => i.id === id);
     if (!item) return;
-    const prev = item.ticker_enabled;
     item.ticker_enabled = enabled;
     try {
       await invoke('set_watch_ticker_enabled', { id, enabled });
     } catch (e) {
-      item.ticker_enabled = prev;
+      // 失败时从数据库重新同步，而不是回滚到 await 前捕获的值：用户快速
+      // 连点（关→开）时，先发的请求后失败会用旧值覆盖后发的意图，且没有
+      // 任何环节会再校正（主窗口不监听 watchlist-changed，只有行情条听）。
+      await fetchWatchlist();
       console.error('[watchlist] setTickerEnabled failed:', e);
     }
   }
