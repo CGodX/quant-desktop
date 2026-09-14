@@ -627,14 +627,16 @@ git commit -m "feat: 行情条按 ticker_enabled 过滤播报标的"
 
 必须在启动前备份，否则迁移已经跑完，就无法真正验证老库升级路径了。
 
-数据库位于 `{app_data_dir}/quant-desktop.db`，即 `%APPDATA%\com.leaderxin.quant-desktop\quant-desktop.db`（identifier 见 `src-tauri/tauri.conf.json:5`）。若可执行文件旁存在 `portable.dat`，路径改为 `<exe目录>/data/quant-desktop.db`。
+**路径不是由 Tauri identifier 推导的。** `src-tauri/src/lib.rs:110-126` 用的是 `dirs::data_dir().join("quant-desktop")`，所以真机路径是 `%APPDATA%\quant-desktop\quant-desktop.db`——`tauri.conf.json` 里的 `identifier`（`com.leaderxin.quant-desktop`）只影响别处，那个目录根本不存在。若可执行文件旁存在 `portable.dat`，路径改为 `<exe目录>/data/quant-desktop.db`。
 
 ```bash
-cp "$APPDATA/com.leaderxin.quant-desktop/quant-desktop.db" \
-   "$APPDATA/com.leaderxin.quant-desktop/quant-desktop.db.bak"
+cp "$APPDATA/quant-desktop/quant-desktop.db" \
+   "$APPDATA/quant-desktop/quant-desktop.db.bak"
 ```
 
-若该文件不存在（本机从未运行过打包版），说明没有真实老库可测，改为直接跳到 Step 3——老库迁移路径已由 Task 1 的 `legacy_db_migrates_and_defaults_enabled` 单元测试覆盖。
+最权威的确认方式是启动日志：`src-tauri/src/lib.rs:147` 会打印 `Data directory: <路径> (portable: ...)`。若与你备份的路径不一致，以日志为准重新备份。
+
+若该文件确实不存在（本机从未运行过打包版），才可跳过 Step 2 的老库升级检查——该路径已由 Task 1 的 `legacy_db_migrates_and_defaults_enabled` 单元测试覆盖。**不要因为 identifier 路径不存在就跳过**，那是本步骤最初踩过的坑。
 
 - [ ] **Step 2: 验证老库迁移**
 
@@ -676,7 +678,7 @@ Run: `npm run tauri dev`
 确认无误后删除备份（若 Step 1 未产生备份则跳过）：
 
 ```bash
-rm -f "$APPDATA/com.leaderxin.quant-desktop/quant-desktop.db.bak"
+rm -f "$APPDATA/quant-desktop/quant-desktop.db.bak"
 ```
 
 - [ ] **Step 8: 更新文档**

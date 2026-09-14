@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -88,15 +88,29 @@ function startCycle() {
 }
 
 const tickerItems = computed(() =>
-  watchlist.items.map(item => {
-    const q = quoteStore.getQuote(item.code, item.market);
-    return {
-      name: item.name,
-      code: item.code,
-      price: q?.price ?? null,
-      changePct: q?.change_pct ?? null,
-    };
-  })
+  watchlist.items
+    .filter((item) => item.ticker_enabled)
+    .map((item) => {
+      const q = quoteStore.getQuote(item.code, item.market);
+      return {
+        name: item.name,
+        code: item.code,
+        price: q?.price ?? null,
+        changePct: q?.change_pct ?? null,
+      };
+    })
+);
+
+// 可见集合变化时回到第一屏，避免列表变短后观众从半截开始看。
+//
+// 必须监听 length 而不是 tickerItems 本身：tickerItems 依赖 quote store，
+// 行情每次轮询都会重算，直接监听它会每 2 秒重置一次 page，翻页将永远
+// 停在第一屏。
+watch(
+  () => tickerItems.value.length,
+  () => {
+    page.value = 0;
+  }
 );
 
 const visibleItems = computed(() => {
@@ -227,7 +241,10 @@ async function handleClick() {
         >{{ item.changePct >= 0 ? '+' : '' }}{{ item.changePct.toFixed(2) }}%</span>
       </div>
     </template>
-    <div v-else class="ticker-empty">暂无自选</div>
+    <!-- 区分两种为空：诚然没有自选，与有自选但全部关闭了播报 -->
+    <div v-else class="ticker-empty">
+      {{ watchlist.items.length === 0 ? '暂无自选' : '暂未设置播报标的' }}
+    </div>
   </div>
 </template>
 

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, h, inject, onMounted } from 'vue';
-import { NButton, NDataTable, NDropdown } from 'naive-ui';
+import { NButton, NDataTable, NDropdown, NSwitch } from 'naive-ui';
 import type { DataTableColumns } from 'naive-ui';
 import { invoke } from '@tauri-apps/api/core';
 import { useWatchlistStore } from '@/stores/watchlist';
@@ -135,7 +135,6 @@ const columns: DataTableColumns<WatchItem> = [
   },
   {
     title: '名称', key: 'name', width: 168,
-    sorter: (a: WatchItem, b: WatchItem) => a.name.localeCompare(b.name),
     render(row) {
       return h('div', { class: 'name-cell' }, [
         h(MarketTag, { code: row.code, category: cnCategory(row.code) }),
@@ -229,6 +228,31 @@ const columns: DataTableColumns<WatchItem> = [
       const q = quoteStore.getQuote(row.code, row.market);
       if (!q || q.turnover_rate == null) return '--';
       return h('span', `${q.turnover_rate.toFixed(2)}%`);
+    }
+  },
+  {
+    title: '行情条播报', key: 'ticker_enabled', width: 96,
+    render(row) {
+      // 包一层 div 并阻止冒泡：表格行的 onClick 会展开/收起详情面板，
+      // 不拦截的话拨开关会连带触发。
+      return h(
+        'div',
+        {
+          class: 'ticker-toggle-cell',
+          onClick: (e: MouseEvent) => e.stopPropagation(),
+        },
+        [
+          h(NSwitch, {
+            value: row.ticker_enabled,
+            size: 'small',
+            'aria-label': `${row.name} 行情条播报`,
+            'onUpdate:value': (v: boolean) => {
+              // store 内部已 try/catch 并回滚，不会 reject，这里无需再兜错。
+              void watchlist.setTickerEnabled(row.id, v);
+            },
+          }),
+        ],
+      );
     }
   },
 ];
@@ -401,5 +425,10 @@ defineExpose({ clearSelection: () => { selectedRow.value = null; } });
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+:deep(.ticker-toggle-cell) {
+  display: flex;
+  align-items: center;
+  height: 100%;
 }
 </style>

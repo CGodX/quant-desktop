@@ -1,7 +1,7 @@
 # 自选股「行情条播报」开关设计文档
 
 日期：2026-09-14
-状态：已批准，待实现
+状态：已实现（v1.4.7）
 
 ## 目标
 
@@ -9,7 +9,9 @@
 
 ## 背景与现状
 
-- 自选表 [WatchlistTable.vue](../../../src/components/watchlist/WatchlistTable.vue) 当前 8 列：代码 / 名称 / 最新价 / 涨跌幅 / 涨跌额 / 成交量 / 成交额 / 换手率，宽度合计 700px。主窗口 1100×680，末尾仍有空间。
+- 自选表 [WatchlistTable.vue](../../../src/components/watchlist/WatchlistTable.vue) 当前 8 列：代码(72) / 名称(168) / 最新价(100) / 涨跌幅(100) / 涨跌额(90) / 成交量(90) / 成交额(90) / 换手率(80)，宽度合计 **790px**。新增 96px 的播报列后为 **886px**。
+  - 主窗口默认 1388px、持久化宽度实测 1342px，正常使用下有余量。
+  - **已知约束**：主窗口 `resizable: true` 且未设 `minWidth`，`NDataTable` 也未开 `scroll-x`。内容宽度低于约 918px 时最右列（恰是本次新增的列）可能被裁切且无横向滚动。默认窗口宽度下不触发，收窄窗口时需留意。若不接受此行为，可在 `tauri.conf.json` 给主窗口设 `minWidth`（约 960）或给表格开 `scroll-x`。
 - 行情条 [TickerBar.vue](../../../src/components/ticker/TickerBar.vue)：独立的 `ticker` webview 窗口，`tickerItems` 直接由 `watchlist.items` 映射而来，每次展示 2 条、每 3 秒翻页，悬停暂停。空列表时显示「暂无自选」。
 - 行情条已监听 `watchlist-changed` 事件并在触发时重新拉取自选列表，因此后端任何写操作后发该事件即可让行情条实时生效，**无需新增事件**。
 - 已有的 `ticker_visible` setting 控制的是**整个行情条窗口的显隐**（托盘菜单切换），与本次的按标的开关是两个正交的维度。

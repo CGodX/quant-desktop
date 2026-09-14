@@ -56,7 +56,7 @@ Vite is configured with two Rollup inputs (`index.html` + `ticker.html`) in [vit
 - `KLineData` — daily/weekly/monthly K-line bar (date, open, high, low, close, volume, turnover)
 - `StockBrief` — minimal stock identifier for search results
 
-**`db/mod.rs`** — SQLite database (via `rusqlite` with bundled SQLite). Three tables: `watchlist`, `settings` (key-value), `quote_cache`. Database is stored at `{app_data_dir}/quant-desktop.db`. Auto-creates tables and default settings on first open. `init_defaults()` inserts default settings only on first run (when key does not exist); user preferences persist across restarts.
+**`db/mod.rs`** — SQLite database (via `rusqlite` with bundled SQLite). Three tables: `watchlist`, `settings` (key-value), `quote_cache`. The database lives at `dirs::data_dir().join("quant-desktop")/quant-desktop.db` — note this is **not** derived from the Tauri `identifier` in `tauri.conf.json`; on Windows the real path is `%APPDATA%\quant-desktop\quant-desktop.db`. In portable mode (a `portable.dat` next to the executable) it is `<exe_dir>/data/quant-desktop.db` instead. The startup log prints the resolved path as `Data directory: <path> (portable: ...)`. Auto-creates tables and default settings on first open. `init_defaults()` inserts default settings only on first run (when key does not exist); user preferences persist across restarts. Schema migrations run inside `Database::open()` on **every** launch, so they must stay idempotent.
 
 **`datasource/mod.rs`** — Pluggable data source architecture. The `DataSource` trait defines `fetch_realtime()`, `fetch_indices()`, `search()`, `fetch_depth()`, `fetch_minute_data()`, `fetch_kline()`, `health_check()`. `DataSourceManager` holds a registry of adapters and an `active` name, supporting runtime switching. A `tokio::sync::Notify` wakeup mechanism triggers immediate refresh on data source switch.
 
@@ -101,7 +101,7 @@ App.vue → NConfigProvider + NMessageProvider (theme overrides, accent=blue)
   └─ AppLayout.vue
        ├─ TopBar.vue (slogan, data source dropdown)
        ├─ IndexBar.vue → IndexCard.vue × N (market indices from quote store)
-       ├─ WatchlistTable.vue (NDataTable: sortable columns, right-click context menu, row-click expands detail)
+       ├─ WatchlistTable.vue (NDataTable: sortable columns, right-click context menu, row-click expands detail, trailing 行情条播报 switch column)
        │    ├─ AddStockDialog.vue (search with 300ms debounce + add modal)
        │    └─ StockDetail.vue (expanded row detail panel)
        │         ├─ ChartSwitcher.vue (toggle: 分时/日K/周K/月K)
@@ -112,7 +112,7 @@ App.vue → NConfigProvider + NMessageProvider (theme overrides, accent=blue)
        └─ StatusBar.vue (version, check update, theme toggle, auto-launch toggle, contact)
 ```
 
-**Ticker bar** ([TickerBar.vue](src/components/ticker/TickerBar.vue)) — Standalone mini Vue app that polls watchlist + settings, listens to quote events, and cycles through stocks two at a time with 3-second auto-scroll. Pauses on hover. Clicking restores the main window. Polls settings every 1s to sync theme changes.
+**Ticker bar** ([TickerBar.vue](src/components/ticker/TickerBar.vue)) — Standalone mini Vue app that polls watchlist + settings, listens to quote events, and cycles through stocks two at a time with 3-second auto-scroll. Pauses on hover. Clicking restores the main window. Polls settings every 1s to sync theme changes. 只播报 `ticker_enabled` 为开的自选，该开关可在主窗口自选表中逐只切换。
 
 **Composables**:
 - `useTauriEvent.ts` — Vue lifecycle wrapper for `listen()` (auto-cleanup on unmount)
