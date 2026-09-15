@@ -12,6 +12,11 @@ name: Microsoft Store Release
 # 说明：MSIX 由微软商店签名，因此本工作流不设置 TAURI_SIGNING_PRIVATE_KEY。
 on:
   workflow_dispatch:
+    inputs:
+      revision:
+        description: "MSIX 版本第 4 段（revision），默认 0。商店规则：应用首个提交的包 revision 必须为 0；仅当同一应用版本的旧包版本号已被 Partner Center 接受占用时才需递增。"
+        required: false
+        default: "0"
 
 env:
   # Partner Center「产品标识」→「包标识符」字段，必须与 Partner Center 完全一致。
@@ -27,6 +32,8 @@ jobs:
       - name: Validate packaging inputs (fast fail)
         id: validate
         shell: pwsh
+        env:
+          MSIX_REVISION: ${{ inputs.revision }}
         # 所有打包输入在构建前校验（env、版本号、图标），配置错误几秒内失败，
         # 而不是浪费 10-20 分钟构建后在打包步骤才发现。
         run: |
@@ -45,10 +52,17 @@ jobs:
             }
           }
 
-          # MSIX 版本 = 应用版本（tauri.conf.json，须为纯 x.y.z）+ GITHUB_RUN_NUMBER 作第 4 段。
-          # 第 4 段用 run number：Partner Center 要求每次提交的包版本严格大于上一次，
-          # 这样同一应用版本下重复触发本工作流（如修复打包问题后重跑）也能产生合法的新版本号，
-          # 不必为重新打包而强行提升应用版本。
+          # MSIX 版本 = 应用版本（tauri.conf.json，须为纯 x.y.z）+ revision 输入作第 4 段。
+          # 商店规则（Partner Center 包校验）：应用首个提交的包 revision 必须为 0
+          #（报错形如「不允许应用在应用清单中指定版本号不为零的版本」），前三段可任选；
+          # 后续提交只需版本严格大于上一次已接受的版本。因此 revision 默认 0 ——
+          # 上传被拒后重跑直接重新上传同版本即可；仅当同一应用版本的旧包版本号
+          # 已被 Partner Center 接受占用时，才通过输入参数递增 revision。
+          $revision = "$env:MSIX_REVISION"
+          if ([string]::IsNullOrWhiteSpace($revision)) { $revision = "0" }
+          if ($revision -notmatch '^\d+$') {
+            $errors += "revision input '$revision' must be a non-negative integer."
+          }
           $version = (Read-Utf8 "src-tauri/tauri.conf.json" | ConvertFrom-Json).version
           if ($version -notmatch '^\d+\.\d+\.\d+$') {
             $errors += "tauri.conf.json version '$version' must be a stable x.y.z (no prerelease suffix) for Store submission."
@@ -65,7 +79,7 @@ jobs:
             exit 1
           }
 
-          $msixVersion = "$version.$env:GITHUB_RUN_NUMBER"
+          $msixVersion = "$version.$revision"
           Write-Host "MSIX version: $msixVersion"
           "msix_version=$msixVersion" >> $env:GITHUB_OUTPUT
 
