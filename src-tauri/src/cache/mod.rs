@@ -253,6 +253,7 @@ impl Scheduler {
                     if let Err(e) = app_handle.emit("market-session-changed", serde_json::json!({
                         "session": session.name(),
                         "interval_secs": session.recommended_interval(),
+                        "overview_interval_secs": session.overview_interval(),
                     })) {
                         log::warn!("Failed to emit market-session-changed: {}", e);
                     }

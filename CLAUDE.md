@@ -23,11 +23,19 @@ node scripts/build.mjs
 # Type-check the frontend
 npx vue-tsc --noEmit
 
+# Frontend unit tests (vitest)
+npm test
+
 # Build Rust backend only
 cargo build --manifest-path src-tauri/Cargo.toml
 ```
 
-There are no dedicated test or lint commands configured yet. `vue-tsc` with the strict tsconfig enforces type correctness; `cargo build` compiles the Rust side.
+Frontend tests run with `vitest` (`npm test`, or `npm run test:watch`). They cover store-level
+logic that is hard to eyeball — currently the market-overview refresh scheduler's concurrency in
+[src/stores/market.spec.ts](src/stores/market.spec.ts). Tauri IPC is mocked at the `invoke`/`listen`
+boundary; Pinia and the stores themselves are real. There is no lint command configured yet.
+`vue-tsc` with the strict tsconfig enforces type correctness on both app and test code; `cargo test`
+runs the Rust side (blacklist classification, response parsing, session intervals).
 
 ## Architecture
 
@@ -155,7 +163,7 @@ DataSource switching triggers a `Notify` wakeup → Scheduler immediately refres
 ### Key dependencies
 
 - **Rust**: `tauri` v2 (with tray-icon feature), `rusqlite` (bundled), `reqwest` (rustls-tls), `tokio` (full), `chrono`, `serde`/`serde_json`, `encoding_rs` (GBK decoding), `async-trait`, `log` + `simplelog` (file+stderr logging)
-- **Frontend**: `vue` 3, `pinia`, `naive-ui`, `@tauri-apps/api`, `@tauri-apps/plugin-opener`, `@tauri-apps/plugin-updater`, `vite`, `vue-tsc`, `klinecharts` (v10 beta)
+- **Frontend**: `vue` 3, `pinia`, `naive-ui`, `@tauri-apps/api`, `@tauri-apps/plugin-opener`, `@tauri-apps/plugin-updater`, `vite`, `vue-tsc`, `vitest` (dev, store unit tests), `klinecharts` (v10 beta)
 
 ### Default settings (auto-inserted on first run)
 

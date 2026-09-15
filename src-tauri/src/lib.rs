@@ -181,6 +181,9 @@ pub fn run() {
             app.manage(db.clone());
             app.manage(ds_manager.clone());
             app.manage(cache.clone());
+            app.manage(Arc::new(
+                crate::datasource::market::MarketOverviewClient::new(),
+            ));
             app.manage(PortableMode(is_portable));
 
             // Start background polling
@@ -625,6 +628,8 @@ pub fn run() {
             commands::settings::switch_datasource,
             commands::settings::list_datasources,
             commands::settings::get_portable_mode,
+            commands::market::get_market_overview,
+            commands::market::get_overview_interval,
             commands::window::show_main_window,
             commands::updater::check_update,
             commands::updater::install_update,
@@ -666,7 +671,7 @@ fn detect_and_set_proxy() {
             // Exclude domestic stock APIs from proxy
             std::env::set_var(
                 "NO_PROXY",
-                "sinajs.cn,sina.com.cn,gtimg.cn,gu.qq.com,qq.com,localhost,127.0.0.1",
+                "sinajs.cn,sina.com.cn,gtimg.cn,gu.qq.com,qq.com,eastmoney.com,localhost,127.0.0.1",
             );
             log::info!("[proxy] {} (stock APIs excluded)", proxy);
             return;
