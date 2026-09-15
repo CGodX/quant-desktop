@@ -36,8 +36,12 @@ export interface SectorItem {
   code: string;
   name: string;
   change_pct: number;
+  /** 板块内涨幅最高的成分股(涨幅榜用) */
   leader_name: string | null;
   leader_pct: number | null;
+  /** 板块内跌幅最深的成分股(跌幅榜用) */
+  laggard_name: string | null;
+  laggard_pct: number | null;
 }
 
 export interface MarketOverview {

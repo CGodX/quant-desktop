@@ -629,6 +629,7 @@ pub fn run() {
             commands::settings::list_datasources,
             commands::settings::get_portable_mode,
             commands::market::get_market_overview,
+            commands::market::get_overview_interval,
             commands::window::show_main_window,
             commands::updater::check_update,
             commands::updater::install_update,

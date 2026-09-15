@@ -85,10 +85,14 @@ pub struct SectorItem {
     pub name: String,
     /// 板块涨跌幅(%)
     pub change_pct: f64,
-    /// 领涨股名称(可选)
+    /// 领涨股名称(可选)—— 板块内涨幅最高的成分股
     pub leader_name: Option<String>,
     /// 领涨股涨跌幅(%)(可选)
     pub leader_pct: Option<f64>,
+    /// 领跌股名称(可选)—— 板块内跌幅最深的成分股。跌幅榜用它,见 `parse_clist`
+    pub laggard_name: Option<String>,
+    /// 领跌股涨跌幅(%)(可选)
+    pub laggard_pct: Option<f64>,
 }
 
 /// 市场概览聚合数据(总成交额 + 涨跌家数 + 板块排名)

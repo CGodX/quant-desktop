@@ -5,6 +5,7 @@ import type { DataTableColumns } from 'naive-ui';
 import { invoke } from '@tauri-apps/api/core';
 import { useWatchlistStore } from '@/stores/watchlist';
 import { useQuoteStore } from '@/stores/quote';
+import { useMarketStore } from '@/stores/market';
 import type { WatchItem } from '@/types';
 import { formatPrice, formatVolume, formatCode, cnCategory } from '@/utils/format';
 import AddStockDialog from './AddStockDialog.vue';
@@ -14,6 +15,7 @@ import { CLEAR_INDEX_DETAIL_KEY } from '@/utils/keys';
 
 const watchlist = useWatchlistStore();
 const quoteStore = useQuoteStore();
+const market = useMarketStore();
 const showAddDialog = ref(false);
 
 const indexDetailCoord = inject<{
@@ -302,6 +304,8 @@ defineExpose({ clearSelection: () => { selectedRow.value = null; } });
             selectedRow = null;
           } else {
             indexDetailCoord?.clearIndexDetail();
+            // 详情面板要占竖向空间,先把同样吃高度的市场概览收起(已折叠时是 no-op)
+            market.setExpanded(false);
             selectedRow = row;
           }
         }
@@ -343,10 +347,11 @@ defineExpose({ clearSelection: () => { selectedRow.value = null; } });
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: var(--space-3) 0;
+  padding: var(--space-2) 0;
   flex-shrink: 0;
 }
 .section-title {
+  margin: 0;
   font-size: var(--text-md);
   font-weight: var(--font-weight-semibold);
   color: var(--color-text-primary);

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted } from 'vue';
 import { useMarketStore, type MarketDirection } from '@/stores/market';
+import type { SectorItem } from '@/types';
 import { formatAmount } from '@/utils/format';
 
 const market = useMarketStore();
@@ -20,14 +21,21 @@ function isUp(pct: number) {
   return pct >= 0;
 }
 
+/** 榜单方向决定看哪只成分股:涨幅榜看领涨股,跌幅榜看领跌股(不是同一个字段)。 */
+const leaderLabel = computed(() => (market.direction === 'up' ? '领涨' : '领跌'));
+function leaderOf(s: SectorItem) {
+  return market.direction === 'up' ? s.leader_name : s.laggard_name;
+}
+
 function pctText(pct: number) {
   return `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`;
 }
 
-/** 背景色条宽度:涨跌幅绝对值相对 10%(主板涨停)归一化,封顶 100%。 */
+/** 背景色条宽度:涨跌幅绝对值相对 10%(主板涨停)归一化,封顶 100%。
+ *  下限 3% —— 微涨(如 +0.05%)时若按比例只有几 px,会被误读成渲染瑕疵。 */
 function barWidth(pct: number) {
   const capped = Math.min(Math.abs(pct) / 10, 1);
-  return `${(capped * 100).toFixed(1)}%`;
+  return `${Math.max(capped * 100, 3).toFixed(1)}%`;
 }
 
 function toggleExpand() {
@@ -35,10 +43,9 @@ function toggleExpand() {
 }
 
 onMounted(() => {
-  if (market.expanded) {
-    market.fetchOverview();
-    market.startRefresh();
-  }
+  // 无论展开与否都要轮询:折叠时标题栏的成交额/涨跌家数依赖它。
+  // startRefresh 内部会先立即拉一次,再按后端 market_clock 的时段间隔排期。
+  void market.startRefresh();
 });
 
 onUnmounted(() => {
@@ -107,7 +114,7 @@ onUnmounted(() => {
           type="button"
           role="tab"
           :aria-selected="market.direction === opt.key"
-          @click="market.toggleDirection()"
+          @click="market.setDirection(opt.key)"
         >
           {{ opt.label }}
         </button>
@@ -124,14 +131,14 @@ onUnmounted(() => {
               :class="isUp(s.change_pct) ? 'row-up' : 'row-down'"
             >
               <span class="sector-bar" aria-hidden="true" :style="{ width: barWidth(s.change_pct) }"></span>
-              <span class="sector-rank tabular-nums">{{ i + 1 }}</span>
+              <span class="sector-rank tabular-nums" :class="{ 'rank-top': i < 3 }">{{ i + 1 }}</span>
               <span class="sector-name">{{ s.name }}</span>
               <span class="sector-pct tabular-nums" :class="isUp(s.change_pct) ? 'pct-up' : 'pct-down'">
                 {{ pctText(s.change_pct) }}
               </span>
               <span class="sector-leader">
-                <template v-if="s.leader_name">
-                  <span class="leader-label">领涨</span>{{ s.leader_name }}
+                <template v-if="leaderOf(s)">
+                  <span class="leader-label">{{ leaderLabel }}</span>{{ leaderOf(s) }}
                 </template>
                 <template v-else>--</template>
               </span>
@@ -150,14 +157,14 @@ onUnmounted(() => {
               :class="isUp(s.change_pct) ? 'row-up' : 'row-down'"
             >
               <span class="sector-bar" aria-hidden="true" :style="{ width: barWidth(s.change_pct) }"></span>
-              <span class="sector-rank tabular-nums">{{ i + 1 }}</span>
+              <span class="sector-rank tabular-nums" :class="{ 'rank-top': i < 3 }">{{ i + 1 }}</span>
               <span class="sector-name">{{ s.name }}</span>
               <span class="sector-pct tabular-nums" :class="isUp(s.change_pct) ? 'pct-up' : 'pct-down'">
                 {{ pctText(s.change_pct) }}
               </span>
               <span class="sector-leader">
-                <template v-if="s.leader_name">
-                  <span class="leader-label">领涨</span>{{ s.leader_name }}
+                <template v-if="leaderOf(s)">
+                  <span class="leader-label">{{ leaderLabel }}</span>{{ leaderOf(s) }}
                 </template>
                 <template v-else>--</template>
               </span>
@@ -209,12 +216,15 @@ onUnmounted(() => {
   color: var(--color-text-primary);
   flex-shrink: 0;
 }
+/* 折叠 ▶ / 展开 ▼ —— 常见展开指示方向。原先基础态是 ▼、展开转 90° 成 ◀,
+   两个方向都不符合习惯,默认折叠后尤其容易误读。 */
 .chevron {
   color: var(--color-text-tertiary);
   transition: transform var(--transition-fast);
+  transform: rotate(-90deg);
 }
 .chevron-expanded {
-  transform: rotate(90deg);
+  transform: rotate(0deg);
 }
 
 .header-right {
@@ -275,34 +285,37 @@ onUnmounted(() => {
 
 /* ── 展开体 ── */
 .overview-body {
-  padding: var(--space-3) var(--space-4) var(--space-3);
+  padding: var(--space-2) var(--space-4);
 }
 
+/* 分段控件 —— 与股票详情里的周期切换(ChartSwitcher)保持同一套样式 */
 .direction-toggle {
-  display: inline-flex;
-  gap: var(--space-1);
-  margin-bottom: var(--space-3);
+  display: flex;
+  gap: 2px;
+  margin-bottom: var(--space-2);
   padding: 2px;
   border-radius: var(--radius-md);
   background: var(--color-surface-2);
+  width: fit-content;
 }
 .direction-btn {
-  padding: 2px 12px;
+  padding: 3px 12px;
   border: none;
   border-radius: var(--radius-sm);
-  background: none;
-  color: var(--color-text-secondary);
+  background: transparent;
+  color: var(--color-text-tertiary);
   font-size: var(--text-xs);
   font-family: var(--font-sans);
+  line-height: 1.4;
   cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast);
+  transition: all var(--transition-fast);
 }
 .direction-btn:hover {
-  color: var(--color-text-primary);
+  color: var(--color-text-secondary);
 }
 .direction-btn-active {
-  background: var(--color-surface-3);
-  color: var(--color-text-primary);
+  background: var(--color-accent-dim);
+  color: var(--color-accent);
   font-weight: var(--font-weight-medium);
 }
 
@@ -313,26 +326,33 @@ onUnmounted(() => {
 }
 
 .sector-column-title {
-  margin: 0 0 var(--space-2);
+  margin: 0 0 var(--space-3);
   font-size: var(--text-xs);
   font-weight: var(--font-weight-medium);
   color: var(--color-text-secondary);
 }
 
+/* 行间距 > 行内 padding,标题间距 > 行间距 —— 三级留白让分组关系自明 */
 .sector-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
-/* 行 —— flex 布局:序号/名称居左,涨跌幅/领涨股靠右,减少三列均分的留白 */
+/* 行 —— grid 定宽列:序号 / 名称 / 涨跌幅 / 领涨股。
+   涨跌幅与领涨股都是确定宽度,标签位置才不会被领涨股名称长度推着左右跑;
+   名称列独占剩余空间(1fr),空间不足时靠省略号截断而不是挤压其它列。 */
 .sector-row {
   position: relative;
-  display: flex;
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto 104px;
   align-items: center;
   gap: var(--space-3);
-  padding: 4px 6px;
-  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  border-radius: var(--radius-md);
 }
 
 /* 涨幅背景色条:渐变实色 → 透明,宽度随涨幅强度,不遮挡文字 */
@@ -341,38 +361,42 @@ onUnmounted(() => {
   left: 0;
   top: 0;
   bottom: 0;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   pointer-events: none;
-  opacity: 0.16;
 }
 .row-up .sector-bar {
-  background: linear-gradient(90deg, var(--color-up), transparent);
+  background: linear-gradient(90deg, var(--color-up-bar), var(--color-up-bar-end));
 }
 .row-down .sector-bar {
-  background: linear-gradient(90deg, var(--color-down), transparent);
+  background: linear-gradient(90deg, var(--color-down-bar), var(--color-down-bar-end));
 }
 
 .sector-rank {
   position: relative;
-  width: 14px;
   text-align: right;
-  flex-shrink: 0;
   font-size: var(--text-xs);
   color: var(--color-text-tertiary);
 }
+/* 前三名加重,榜单扫读时的视觉锚点 */
+.rank-top {
+  color: var(--color-text-secondary);
+  font-weight: var(--font-weight-medium);
+}
 .sector-name {
   position: relative;
-  flex: 0 1 auto;
   min-width: 0;
   color: var(--color-text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* 定宽 + 右对齐:6 位(+6.82%)与 7 位(+20.00%)的标签同宽(56px = 7 位实测宽),
+   数字成列;若出现更长的数值则向左生长,不会撞到领涨股列 */
 .sector-pct {
   position: relative;
-  margin-left: auto;
-  flex-shrink: 0;
+  justify-self: end;
+  min-width: 56px;
+  text-align: right;
   font-size: var(--text-xs);
   font-weight: var(--font-weight-semibold);
   padding: 1px 6px;
@@ -381,20 +405,20 @@ onUnmounted(() => {
 }
 .pct-up { background: var(--color-up-bg); color: var(--color-up); }
 .pct-down { background: var(--color-down-bg); color: var(--color-down); }
+/* 104px ≈ 领涨(26px) + 间距 + 5 个汉字 / XD·*ST 前缀,是 A 股简称的实际上限。
+   左对齐:各行的「领涨」二字对齐成一条竖线,长短不一的是右侧股名,右侧本是空白 */
 .sector-leader {
   position: relative;
-  flex-shrink: 0;
-  min-width: 0;
-  max-width: 45%;
-  color: var(--color-text-tertiary);
-  text-align: right;
+  color: var(--color-text-secondary);
+  text-align: left;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* 用色阶而非 opacity 区分主次:0.7 透明度会把 tertiary 压到 ~2.9:1,低于可读阈值 */
 .leader-label {
   margin-right: 4px;
-  opacity: 0.7;
+  color: var(--color-text-tertiary);
 }
 
 .sector-empty {

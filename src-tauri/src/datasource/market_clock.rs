@@ -59,6 +59,20 @@ impl MarketSession {
         }
     }
 
+    /// 市场概览(成交额 + 涨跌家数 + 板块榜)的建议轮询间隔(秒)。
+    ///
+    /// 与 `recommended_interval`(个股报价)刻意分开:概览是聚合摘要,不需要 2s 那种
+    /// 粒度,且它打的是东财 clist / 涨跌分布接口,有频控。盘中维持 60s 不变;休市
+    /// 这几块数据完全不动,退避到 5 分钟,避免夜间和周末整夜空转。
+    pub fn overview_interval(&self) -> u64 {
+        match self {
+            Self::MorningTrade | Self::AfternoonTrade => 60,
+            Self::PreOpen => 60,
+            Self::LunchBreak => 120,
+            Self::Closed => 300,
+        }
+    }
+
     /// Human-readable session name
     pub fn name(&self) -> &str {
         match self {
@@ -67,6 +81,40 @@ impl MarketSession {
             Self::LunchBreak => "午休",
             Self::AfternoonTrade => "午盘",
             Self::Closed => "休市",
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn overview_interval_backs_off_outside_trading() {
+        assert_eq!(MarketSession::MorningTrade.overview_interval(), 60);
+        assert_eq!(MarketSession::AfternoonTrade.overview_interval(), 60);
+        assert_eq!(MarketSession::PreOpen.overview_interval(), 60);
+        assert_eq!(MarketSession::LunchBreak.overview_interval(), 120);
+        assert_eq!(MarketSession::Closed.overview_interval(), 300);
+    }
+
+    /// 概览间隔必须比同期的个股报价间隔慢 —— 它是聚合摘要,且打的接口有频控。
+    #[test]
+    fn overview_interval_is_slower_than_quote_interval() {
+        for s in [
+            MarketSession::PreOpen,
+            MarketSession::MorningTrade,
+            MarketSession::LunchBreak,
+            MarketSession::AfternoonTrade,
+            MarketSession::Closed,
+        ] {
+            assert!(
+                s.overview_interval() > s.recommended_interval(),
+                "{:?}: overview {} 应慢于 quote {}",
+                s,
+                s.overview_interval(),
+                s.recommended_interval()
+            );
         }
     }
 }

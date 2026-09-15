@@ -102,12 +102,16 @@ impl MarketOverviewClient {
     /// 为什么不能 `pz=5` 直接过滤:东财 `m:90+t:3` 的「概念」实为主题概念 +
     /// 风格因子(历史新高、微盘股…) + 指数成分(中证500、茅指数…) + 资金持仓的
     /// 大杂烩,若榜首就是这类板块,直接过滤会导致列数不足 5。
+    ///
+    /// 为什么是 50 而不是刚好够用的 30:非主题板块之间高度相关 —— 涨停潮那天
+    /// `昨日涨停`/`昨日连板`/`昨日炸板`/`微盘股`/`历史新高` 会同时冲榜,被剔比例
+    /// 可能远超平日的 20~30%。30 条在极端行情下会过滤到不足 5 条,50 条留出余量。
     pub async fn fetch_concept_ranking(
         &self,
         direction: &str,
     ) -> Result<Vec<SectorItem>, AppError> {
         let mut items = self
-            .fetch_sector_ranking_paged("m:90+t:3", direction, 30)
+            .fetch_sector_ranking_paged("m:90+t:3", direction, 50)
             .await?;
         items.retain(|s| !is_non_concept_board(&s.code));
         items.truncate(5);
@@ -124,7 +128,7 @@ impl MarketOverviewClient {
         let po = if direction == "down" { "0" } else { "1" };
 
         let url = format!(
-            "{}/api/qt/clist/get?pn=1&pz={}&po={}&np=1&fltt=2&invt=2&fid=f3&fs={}&fields=f12,f14,f3,f128,f136",
+            "{}/api/qt/clist/get?pn=1&pz={}&po={}&np=1&fltt=2&invt=2&fid=f3&fs={}&fields=f12,f14,f3,f128,f136,f207,f222",
             EASTMONEY_PUSH2DELAY, pz, po, fs
         );
         let resp = headers::with_browser_headers(
@@ -156,10 +160,12 @@ impl MarketOverviewClient {
 /// 均返回空。故只能用代码黑名单兜底。
 mod concept_blacklist {
     /// 宽基/成分指数(HS300_、中证500、茅指数…)
+    /// + 股份类别/交易机制(AB股、AH股、B股、GDR、科创板做市商/做市股…)
+    /// —— 后一类同样是「非主题的机械分类」,和风格因子一样不该出现在概念榜里。
     pub const INDEX: &[&str] = &[
         "BK0498", "BK0499", "BK0500", "BK0568", "BK0610", "BK0611", "BK0612",
         "BK0636", "BK0638", "BK0701", "BK0705", "BK0742", "BK0743", "BK0821",
-        "BK0867", "BK0879", "BK0999", "BK1000",
+        "BK0867", "BK0868", "BK0879", "BK0999", "BK1000", "BK1107", "BK1108",
     ];
 
     /// 风格/因子(历史新高、微盘股、破净、大小盘成长价值、昨日涨停系列…)
@@ -243,7 +249,12 @@ fn parse_breadth(body: &serde_json::Value) -> Option<(u32, u32, u32)> {
 }
 
 /// 解析东财 `clist` 板块列表响应。
-/// 字段:f12=代码 f14=名称 f3=涨跌幅% f128=领涨股 f136=领涨股涨跌幅%。
+/// 字段:f12=代码 f14=名称 f3=涨跌幅% f128=领涨股 f136=领涨股涨跌幅%
+///       f207=领跌股 f222=领跌股涨跌幅%
+///
+/// 为什么两个都要:跌幅榜里 f128 返回的仍是该板块**涨得最好**的成分股
+/// (实测 2026-09-15 种子板块 -6.93%,f128=ST荃银 -1.59%),直接把它标成
+/// 「领跌」会张冠李戴;真正的领跌股在 f207(同板块 f207=国投丰乐 -9.99%)。
 fn parse_clist(body: &serde_json::Value) -> Vec<SectorItem> {
     let Some(diff) = body.pointer("/data/diff").and_then(|d| d.as_array()) else {
         return Vec::new();
@@ -256,6 +267,8 @@ fn parse_clist(body: &serde_json::Value) -> Vec<SectorItem> {
                 change_pct: item.get("f3")?.as_f64().unwrap_or(0.0),
                 leader_name: item.get("f128").and_then(|v| v.as_str()).map(|s| s.to_string()),
                 leader_pct: item.get("f136").and_then(|v| v.as_f64()),
+                laggard_name: item.get("f207").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                laggard_pct: item.get("f222").and_then(|v| v.as_f64()),
             })
         })
         .collect()
@@ -306,7 +319,8 @@ var hq_str_sz399106="深证综指,1,2,3,4,5,0,0,57760736028,951499754726.529,0";
     fn parses_clist_board() {
         let body = serde_json::json!({
             "data": { "diff": [
-                {"f12": "BK1556", "f14": "教育运营及其他", "f3": 6.59, "f128": "ST豆神", "f136": 12.92}
+                {"f12": "BK1556", "f14": "教育运营及其他", "f3": 6.59, "f128": "ST豆神",
+                 "f136": 12.92, "f207": "博瑞传播", "f222": 0.41}
             ]}
         });
         let items = parse_clist(&body);
@@ -315,6 +329,24 @@ var hq_str_sz399106="深证综指,1,2,3,4,5,0,0,57760736028,951499754726.529,0";
         assert_eq!(items[0].change_pct, 6.59);
         assert_eq!(items[0].leader_name.as_deref(), Some("ST豆神"));
         assert_eq!(items[0].leader_pct, Some(12.92));
+        assert_eq!(items[0].laggard_name.as_deref(), Some("博瑞传播"));
+        assert_eq!(items[0].laggard_pct, Some(0.41));
+    }
+
+    /// 跌幅榜里 f128 仍是板块内**涨得最好**的股票,不能当领跌股用
+    /// (实测 2026-09-15 种子板块 -6.93%:f128=ST荃银 -1.59%,f207=国投丰乐 -9.99%)。
+    #[test]
+    fn parses_clist_laggard_is_not_the_leader() {
+        let body = serde_json::json!({
+            "data": { "diff": [
+                {"f12": "BK0433", "f14": "种子", "f3": -6.93, "f128": "ST荃银",
+                 "f136": -1.59, "f207": "国投丰乐", "f222": -9.99}
+            ]}
+        });
+        let items = parse_clist(&body);
+        assert_eq!(items[0].leader_name.as_deref(), Some("ST荃银"));
+        assert_eq!(items[0].laggard_name.as_deref(), Some("国投丰乐"));
+        assert_ne!(items[0].leader_name, items[0].laggard_name);
     }
 
     #[test]
@@ -327,10 +359,18 @@ var hq_str_sz399106="深证综指,1,2,3,4,5,0,0,57760736028,951499754726.529,0";
         assert!(is_non_concept_board("BK0536")); // 基金重仓(资金)
         assert!(is_non_concept_board("BK0707")); // 沪股通(资金)
         assert!(is_non_concept_board("BK1749")); // 2026中报预增(业绩)
+        // 股份类别 / 交易机制 → 与 AB股、B股 同类,同样剔除
+        assert!(is_non_concept_board("BK0498")); // AB股
+        assert!(is_non_concept_board("BK0868")); // GDR
+        assert!(is_non_concept_board("BK1107")); // 科创板做市商
+        assert!(is_non_concept_board("BK1108")); // 科创板做市股
         // 主题概念 → 保留
         assert!(!is_non_concept_board("BK0917")); // 半导体概念
         assert!(!is_non_concept_board("BK0800")); // 人工智能
         assert!(!is_non_concept_board("BK0900")); // 新能源车
+        // 区域/参股主题是东财口径下的概念板块,不应误剔
+        assert!(!is_non_concept_board("BK0813")); // 雄安新区
+        assert!(!is_non_concept_board("BK0514")); // 参股券商
     }
 
     #[test]

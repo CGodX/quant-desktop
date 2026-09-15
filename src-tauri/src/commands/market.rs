@@ -1,7 +1,17 @@
 use tauri::State;
 use std::sync::Arc;
 use crate::datasource::market::MarketOverviewClient;
+use crate::datasource::market_clock::MarketSession;
 use crate::domain::MarketOverview;
+
+/// 市场概览的建议轮询间隔(秒),按时段由 `market_clock` 给出。
+///
+/// 前端用它决定下一次刷新的排期。为什么不全靠 `market-session-changed` 事件:
+/// 该事件只在时段**切换**时推送,应用启动时不会补发,所以需要这个命令做初始种子。
+#[tauri::command]
+pub fn get_overview_interval() -> u64 {
+    MarketSession::current().overview_interval()
+}
 
 /// 市场概览聚合:总成交额 + 涨跌家数 + 行业/概念板块排名。
 ///
