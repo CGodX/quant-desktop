@@ -91,9 +91,10 @@ The scheduler groups watchlist codes by market, fetches batch quotes, updates th
 **`commands/`** — Tauri IPC command handlers. Each file exposes `#[tauri::command]` functions registered in `lib.rs`:
 - `quote.rs` — `get_quotes`, `get_indices` (read from cache), `get_depth`, `get_intraday`, `get_kline` (async via active data source)
 - `watchlist.rs` — CRUD + reorder/move operations (`get_watchlist`, `add_watch`, `remove_watch`, `reorder_watch`, `move_watch_top`, `move_watch_up`, `move_watch_down`), `search_stocks` (with cross-source fallback: if active source returns empty, tries alternate source)
-- `settings.rs` — `get_settings`, `set_setting`, `switch_datasource`, `list_datasources`
+- `settings.rs` — `get_settings`, `set_setting`, `switch_datasource`, `list_datasources`, `get_portable_mode`, `is_store_build`
+- `autostart.rs` — `get_autostart`, `set_autostart` (OS-level autostart; registry Run key via tauri-plugin-autostart, except Windows store builds which use the packaged-app StartupTask WinRT API)
 - `window.rs` — `show_main_window` (restore from tray)
-- `updater.rs` — `check_update`, `install_update` (auto-update with trading-session-aware prompt suppression)
+- `updater.rs` — `check_update`, `install_update` (auto-update with trading-session-aware prompt suppression; store builds return early at runtime — the commands stay registered so the frontend gets a clean response)
 
 ### Frontend (`src/`)
 
@@ -190,6 +191,8 @@ Main window position/size is saved to SQLite `settings` table on move/resize/clo
 
 ## CI/CD
 
-GitHub Actions workflow at [.github/workflows/release.yml](.github/workflows/release.yml) — triggered on `v*` tags or manual dispatch. Matrix build for Windows (MSVC), macOS (universal), Linux (gnu). Uploads `.exe`/`.msi`/`.dmg`/`.deb`/`.AppImage` artifacts.
+- [release.yml](.github/workflows/release.yml) — triggered on `v*` tags or manual dispatch. Matrix build for Windows (MSVC), macOS (universal), Linux (gnu). Uploads `.exe`/`.msi`/`.dmg`/`.deb`/`.AppImage` artifacts.
+- [ci.yml](.github/workflows/ci.yml) — push/PR CI: `vue-tsc` + vitest (ubuntu), `cargo check` in both feature universes (default and `--features store`) + `cargo test` (windows — the store universe's Windows-only code only compiles there).
+- [store-release.yml](.github/workflows/store-release.yml) — manually dispatched Microsoft Store (MSIX) build: `tauri build --features store --config tauri.microsoftstore.conf.json`, then repacks the intermediate MSI into an unsigned MSIX (Store-signed on ingestion) via `msiexec /a` + `makeappx` with [store/AppxManifest.xml](store/AppxManifest.xml). The `store` cargo feature disables the built-in updater (Store distributes updates) and switches Windows autostart to the StartupTask API.
 
 `scripts/build.mjs` provides a cross-platform build wrapper with automatic proxy detection (Clash/V2Ray on common ports 7890/10809/1080/8118/8080/1087/4780).

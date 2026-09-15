@@ -46,3 +46,11 @@ pub fn list_datasources(manager: State<'_, Arc<DataSourceManager>>) -> Vec<(Stri
 pub fn get_portable_mode(portable: State<'_, PortableMode>) -> bool {
     portable.0
 }
+
+/// Whether this is a Microsoft Store build. Store builds disable the built-in
+/// updater (the Store distributes updates itself); the frontend uses this to
+/// hide the "check update" UI.
+#[tauri::command]
+pub fn is_store_build() -> bool {
+    cfg!(feature = "store")
+}

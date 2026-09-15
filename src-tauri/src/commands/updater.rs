@@ -70,6 +70,11 @@ pub async fn check_update(
     app: AppHandle,
     portable: State<'_, PortableMode>,
 ) -> Result<Option<UpdateInfo>, String> {
+    // Store builds have no updater — updates are distributed by the Store.
+    if cfg!(feature = "store") {
+        log::info!("[updater] Skipping update check — Store build");
+        return Ok(None);
+    }
     if portable.0 {
         log::info!("[updater] Skipping update check — running in portable mode");
         return Ok(None);
@@ -94,6 +99,11 @@ pub async fn install_update(
     app: AppHandle,
     portable: State<'_, PortableMode>,
 ) -> Result<(), String> {
+    // Store builds have no updater — updates are distributed by the Store.
+    if cfg!(feature = "store") {
+        log::info!("[updater] Skipping update install — Store build");
+        return Err("更新由 Microsoft Store 自动管理".to_string());
+    }
     if portable.0 {
         log::info!("[updater] Skipping update install — running in portable mode");
         return Err("更新功能在绿色版中不可用，请手动下载新版本".to_string());

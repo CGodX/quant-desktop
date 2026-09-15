@@ -11,8 +11,14 @@ use simplelog::{CombinedLogger, WriteLogger, TermLogger, LevelFilter, Config, Te
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Emitter, Manager,
+    Manager,
 };
+// `Emitter` is used by the tray menu's "check update" handler below, which is
+// compile-gated out of store builds (the Microsoft Store distributes updates
+// itself). The check_update/install_update IPC commands stay compiled and
+// registered in store builds, guarded at runtime — see commands/updater.rs.
+#[cfg(not(feature = "store"))]
+use tauri::Emitter;
 use db::Database;
 use datasource::DataSourceManager;
 use cache::QuoteCache;
@@ -96,13 +102,23 @@ pub struct PortableMode(pub bool);
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        // Registry Run-key autostart (macOS: LaunchAgent). Store builds on
+        // Windows don't use this — their autostart goes through the packaged
+        // StartupTask API instead (see commands/autostart.rs); the plugin stays
+        // registered for the remaining build configurations.
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None::<Vec<&str>>,
-        ))
-        .plugin(tauri_plugin_updater::Builder::new().build())
+        ));
+
+    // Store builds skip the built-in updater — the Microsoft Store distributes
+    // updates itself, so the updater plugin is not registered at all.
+    #[cfg(not(feature = "store"))]
+    let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+
+    builder
         .setup(|app| {
             // Data directory:
             // - Portable mode (portable.dat exists next to exe) → <exe_dir>/data/
@@ -125,7 +141,9 @@ pub fn run() {
                     (dir, false)
                 });
 
-            // Detect local proxy (Clash/V2Ray) for updater downloads
+            // Detect local proxy (Clash/V2Ray) for updater downloads.
+            // Store builds have no updater, so this is compiled out.
+            #[cfg(not(feature = "store"))]
             detect_and_set_proxy();
 
             // Initialize logger — writes to both stderr (dev) and quant-desktop.log (file)
@@ -207,26 +225,24 @@ pub fn run() {
             let toggle_ticker = MenuItemBuilder::with_id("toggle_ticker", "显示/隐藏行情条").build(app)?;
             let quit_item = MenuItemBuilder::with_id("quit", "退出").build(app)?;
 
-            // Portable mode: skip the "check update" tray item — updates
-            // are managed by the user (download & replace the zip).
+            // Portable mode and Store builds both skip the "check update" tray
+            // item: portable updates are user-managed (download & replace the
+            // zip), and Store updates are handled by the Microsoft Store itself.
+            let menu = MenuBuilder::new(app)
+                .item(&show_item)
+                .item(&toggle_ticker)
+                .separator();
+
+            #[cfg(not(feature = "store"))]
             let menu = if is_portable {
-                MenuBuilder::new(app)
-                    .item(&show_item)
-                    .item(&toggle_ticker)
-                    .separator()
-                    .item(&quit_item)
-                    .build()?
+                menu
             } else {
                 let check_update_item =
                     MenuItemBuilder::with_id("check_update", "检查更新").build(app)?;
-                MenuBuilder::new(app)
-                    .item(&show_item)
-                    .item(&toggle_ticker)
-                    .separator()
-                    .item(&check_update_item)
-                    .item(&quit_item)
-                    .build()?
+                menu.item(&check_update_item)
             };
+
+            let menu = menu.item(&quit_item).build()?;
 
             let _tray = TrayIconBuilder::new()
                 .icon(
@@ -299,6 +315,7 @@ pub fn run() {
                                 );
                             }
                         }
+                        #[cfg(not(feature = "store"))]
                         "check_update" => {
                             // Portable mode: the "check update" tray item is hidden,
                             // but guard here as a safety net.
@@ -628,6 +645,9 @@ pub fn run() {
             commands::settings::switch_datasource,
             commands::settings::list_datasources,
             commands::settings::get_portable_mode,
+            commands::settings::is_store_build,
+            commands::autostart::get_autostart,
+            commands::autostart::set_autostart,
             commands::market::get_market_overview,
             commands::market::get_overview_interval,
             commands::window::show_main_window,
@@ -648,6 +668,7 @@ pub fn run() {
 /// MUST be called during startup, on the main thread, BEFORE any background tasks
 /// (scheduler, updater checks, etc.) are spawned. Concurrent reads of the affected
 /// env vars from other threads while this function runs is undefined behavior.
+#[cfg(not(feature = "store"))]
 fn detect_and_set_proxy() {
     use std::net::TcpStream;
     use std::time::Duration;

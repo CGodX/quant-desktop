@@ -55,9 +55,13 @@ export const useUpdaterStore = defineStore('updater', () => {
   }
 
   async function checkForUpdate(): Promise<UpdateInfo | null> {
-    // Portable mode: updates are managed by the user (download & replace zip).
-    if (useSettingsStore().isPortable) {
-      console.log('[updater] Skipping update check — portable mode');
+    // 自更新不可用的构建在此统一拦截（前端唯一的行为判定点；UI 可见性见
+    // settings store 的 updaterAvailable）：
+    //   - 商店版：更新由 Microsoft Store 分发；
+    //   - 便携版：更新由用户自行下载替换。
+    const settings = useSettingsStore();
+    if (settings.isStoreBuild || settings.isPortable) {
+      console.log('[updater] Skipping update check — store or portable build');
       return null;
     }
 
@@ -88,10 +92,9 @@ export const useUpdaterStore = defineStore('updater', () => {
   }
 
   async function downloadAndInstall() {
-    if (useSettingsStore().isPortable) {
-      console.log('[updater] Skipping update install — portable mode');
-      return;
-    }
+    // 无需 store/portable 门控：安装对话框只能在 checkForUpdate 成功（已在
+    // 上方统一拦截）或托盘「检查更新」事件（商店构建中编译剔除、便携构建中
+    // Rust 侧已拦截）之后打开，此处必然是可自更新的构建。
     if (!updateInfo.value) return;
     updateStatus.value = 'downloading';
     downloadProgress.value = 0;

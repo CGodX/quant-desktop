@@ -1,0 +1,186 @@
+name: Microsoft Store Release
+
+# 手动触发：构建 Microsoft Store（MSIX）分发版。
+#
+# 前置条件（发布前需一次性完成）：
+#   1. 在 Partner Center 创建应用，拿到「包标识符」的 Package/Identity/Name 与 Publisher，
+#      填入下方 env（替换占位值）。
+#   2. 确保 Cargo 已声明 `store` feature（见 src-tauri/Cargo.toml），
+#      `--features store` 下内置 updater 插件不注册（Store 自行分发更新）。
+#
+# 产物：quant-desktop-msix 工件（.msix），上传到 Partner Center 提交。
+# 说明：MSIX 由微软商店签名，因此本工作流不设置 TAURI_SIGNING_PRIVATE_KEY。
+on:
+  workflow_dispatch:
+
+env:
+  # Partner Center「产品标识」→「包标识符」字段，必须与 Partner Center 完全一致。
+  PACKAGE_IDENTITY_NAME: Leaderxin.quant-desktop
+  PACKAGE_PUBLISHER: CN=F3D925AC-A91F-4278-BD78-B51AC83A01BC
+
+jobs:
+  build-store:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate packaging inputs (fast fail)
+        id: validate
+        shell: pwsh
+        # 所有打包输入在构建前校验（env、版本号、图标），配置错误几秒内失败，
+        # 而不是浪费 10-20 分钟构建后在打包步骤才发现。
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          # 显式 UTF-8 读取，不依赖 PS 版本的默认代码页（tauri.conf.json 含中文）。
+          $utf8 = New-Object System.Text.UTF8Encoding $false   # $false = 不写 BOM
+          function Read-Utf8([string]$Path) {
+            [System.IO.File]::ReadAllText([System.IO.Path]::GetFullPath((Join-Path $PWD $Path)), $utf8)
+          }
+
+          $errors = @()
+          foreach ($v in @("PACKAGE_IDENTITY_NAME", "PACKAGE_PUBLISHER")) {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($v))) {
+              $errors += "Env var $v is empty. Set it to the value from Partner Center."
+            }
+          }
+
+          # MSIX 版本 = 应用版本（tauri.conf.json，须为纯 x.y.z）+ GITHUB_RUN_NUMBER 作第 4 段。
+          # 第 4 段用 run number：Partner Center 要求每次提交的包版本严格大于上一次，
+          # 这样同一应用版本下重复触发本工作流（如修复打包问题后重跑）也能产生合法的新版本号，
+          # 不必为重新打包而强行提升应用版本。
+          $version = (Read-Utf8 "src-tauri/tauri.conf.json" | ConvertFrom-Json).version
+          if ($version -notmatch '^\d+\.\d+\.\d+$') {
+            $errors += "tauri.conf.json version '$version' must be a stable x.y.z (no prerelease suffix) for Store submission."
+          }
+
+          foreach ($icon in @("StoreLogo.png", "Square44x44Logo.png", "Square150x150Logo.png")) {
+            if (-not (Test-Path "src-tauri/icons/$icon")) {
+              $errors += "Missing icon asset: src-tauri/icons/$icon"
+            }
+          }
+
+          if ($errors) {
+            Write-Error ($errors -join [Environment]::NewLine)
+            exit 1
+          }
+
+          $msixVersion = "$version.$env:GITHUB_RUN_NUMBER"
+          Write-Host "MSIX version: $msixVersion"
+          "msix_version=$msixVersion" >> $env:GITHUB_OUTPUT
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          cache-on-failure: true
+
+      - name: Cache Tauri tools (NSIS, WiX)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/AppData/Local/Temp/.tauri
+          key: tauri-tools-windows-latest
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Tauri MSI (store build)
+        # --features store：不注册内置 updater 插件（Store 自行分发更新）
+        # --config：合并 store 专用配置 —— 仅构建 MSI；WebView2 用 skip 模式
+        #           （MSIX 管道不会执行 MSI 的 WebView2 安装动作，内嵌只会白白
+        #           下载 ~150MB 进中间产物；运行时依赖系统 Evergreen WebView2，
+        #           见 store/AppxManifest.xml 的 MinVersion 说明）
+        run: npx tauri build --features store --config src-tauri/tauri.microsoftstore.conf.json
+
+      - name: Package as MSIX
+        shell: pwsh
+        # NOTE: every PowerShell *string literal* below is deliberately ASCII-only.
+        # The script file's encoding is not guaranteed, and a mis-decoded literal
+        # (e.g. Chinese in a throw message) is a parse error. Chinese comments are
+        # fine — comments are not parsed. Keep it that way.
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          # 显式 UTF-8 读写，不依赖 PS 版本的默认代码页。
+          # AppxManifest.xml 含中文（商店名称），若按系统 ANSI 代码页读取会损坏。
+          $utf8 = New-Object System.Text.UTF8Encoding $false   # $false = 不写 BOM
+          function Read-Utf8([string]$Path) {
+            [System.IO.File]::ReadAllText([System.IO.Path]::GetFullPath((Join-Path $PWD $Path)), $utf8)
+          }
+
+          # ── 1. 解包 MSI（msiexec /a 仅提取文件树，不执行安装）──
+          $msi = Get-ChildItem "src-tauri/target/release/bundle/msi" -Filter "*.msi" |
+            Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if (-not $msi) { throw "No MSI found under src-tauri/target/release/bundle/msi" }
+
+          # TARGETDIR 必须用反斜杠拼接（Join-Path）：msiexec 拒绝含正斜杠的
+          # TARGETDIR，会以 1603 失败（"$PWD/xxx" 插值产生正斜杠）。
+          $extract = Join-Path $PWD "msix-extract"
+          Remove-Item $extract -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path $extract | Out-Null
+          # ArgumentList 用数组形式（单字符串形式会被 Start-Process 重新加引号
+          # 导致 msiexec 收不到 /a）；$ErrorActionPreference = "Stop" 不作用于
+          # 原生命令退出码，必须显式检查，否则提取失败会以误导性的后续错误
+          # （如 "exe not found"）暴露。
+          $proc = Start-Process msiexec -ArgumentList '/a', "`"$($msi.FullName)`"", '/qn', "TARGETDIR=`"$extract`"" -Wait -PassThru
+          if ($proc.ExitCode -ne 0) { throw "msiexec /a failed with exit code $($proc.ExitCode)" }
+
+          # ── 2. 定位包根目录 ──
+          # msiexec /a 会保留 MSI 的目录层级（...\<ProductName>\quant-desktop.exe），
+          # 而 AppxManifest 的 Executable 只能写相对包根的路径、不允许 ".."，
+          # 因此以 exe 所在目录作为 MSIX 的包根，而非抽取目录本身。
+          $exe = Get-ChildItem $extract -Recurse -Filter "quant-desktop.exe" |
+            Select-Object -First 1
+          if (-not $exe) { throw "quant-desktop.exe not found in extracted MSI tree" }
+          $pkgRoot = $exe.Directory.FullName
+          Write-Host "Package root: $pkgRoot"
+
+          # ── 3. 注入 AppxManifest.xml ──
+          #    __IDENTITY_NAME__ → Identity.Name     （Partner Center 包标识符 Package/Identity/Name）
+          #    __PUBLISHER__     → Identity.Publisher（Partner Center 包标识符 Package/Identity/Publisher）
+          #    __VERSION__       → Identity.Version  （Validate 步骤推导的 4 段式版本号）
+          # env 与图标文件已在 Validate packaging inputs 步骤校验，此处不再重复。
+          $manifest = Read-Utf8 "store/AppxManifest.xml"
+          $manifest = $manifest `
+            -replace '__IDENTITY_NAME__', $env:PACKAGE_IDENTITY_NAME `
+            -replace '__PUBLISHER__', $env:PACKAGE_PUBLISHER `
+            -replace '__VERSION__', "${{ steps.validate.outputs.msix_version }}"
+
+          # 模板与替换逻辑漂移时（改名/漏加占位符）立刻失败，避免把未替换的
+          # 占位符打进 MSIX。
+          if ($manifest -match '__[A-Z_]+__') {
+            throw "Unreplaced placeholder in AppxManifest.xml: $($Matches[0])"
+          }
+          [System.IO.File]::WriteAllText("$pkgRoot/AppxManifest.xml", $manifest, $utf8)
+
+          # ── 4. 复制 AppxManifest.xml 引用的 Logo 资源到包根 ──
+          foreach ($icon in @("StoreLogo.png", "Square44x44Logo.png", "Square150x150Logo.png")) {
+            Copy-Item "src-tauri/icons/$icon" "$pkgRoot/$icon"
+          }
+
+          # ── 5. makeappx 打包 ──
+          # runner 镜像的 Windows SDK 版本会变化，勿硬编码路径。
+          $makeappx = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\makeappx.exe" `
+            -ErrorAction SilentlyContinue |
+            Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $makeappx) { throw "makeappx.exe not found under Windows Kits\10\bin" }
+          Write-Host "makeappx: $makeappx"
+
+          & $makeappx pack /d $pkgRoot /p quant-desktop.msix /o
+          if ($LASTEXITCODE -ne 0) { throw "makeappx failed with exit code $LASTEXITCODE" }
+
+      - name: Upload MSIX artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: quant-desktop-msix
+          path: quant-desktop.msix
