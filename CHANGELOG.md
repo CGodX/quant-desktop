@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.5.0 (2026-09-15)
+
+### Added
+- 新增市场概览面板：两市成交额、涨跌家数与行业/概念板块排行一目了然
+- 应用上架 Microsoft Store
+
+### Changed
+- 全新应用图标
+- 许可证更正为 PolyForm Noncommercial（非商业使用）
+
 ## v1.4.7 (2026-09-14)
 
 ### Added
