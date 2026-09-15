@@ -1,9 +1,8 @@
 // src/stores/settings.ts
 import { defineStore } from 'pinia';
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { emit } from '@tauri-apps/api/event';
-import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart';
 
 export const useSettingsStore = defineStore('settings', () => {
   const settings = ref<Record<string, string>>({});
@@ -12,7 +11,15 @@ export const useSettingsStore = defineStore('settings', () => {
   const theme = ref<'dark' | 'light'>('light');
   const autoLaunch = ref(false);
   const isPortable = ref(false);
+  const isStoreBuild = ref(false);
+  // fetchSettings 是否已完成（无论成败）。依赖 isPortable/isStoreBuild 的 UI
+  // 必须同时等待它，否则商店/便携构建启动时会先以 false 渲染、闪现本应隐藏的控件。
+  const loaded = ref(false);
   const error = ref<string | null>(null);
+
+  // 自更新 UI 可见性的单一判定点（状态栏按钮等）。行为层面的拦截在
+  // updater store 的 checkForUpdate 内统一处理，此处只管"要不要显示"。
+  const updaterAvailable = computed(() => loaded.value && !isPortable.value && !isStoreBuild.value);
 
   async function fetchSettings() {
     try {
@@ -20,26 +27,26 @@ export const useSettingsStore = defineStore('settings', () => {
       activeDatasource.value = settings.value['active_datasource'] || 'tencent';
       theme.value = (settings.value['theme'] as 'dark' | 'light') || 'light';
       datasources.value = await invoke<[string, string][]>('list_datasources');
-      autoLaunch.value = await isEnabled();
+      autoLaunch.value = await invoke<boolean>('get_autostart');
       isPortable.value = await invoke<boolean>('get_portable_mode');
+      isStoreBuild.value = await invoke<boolean>('is_store_build');
     } catch (e) {
       console.error('Failed to fetch settings:', e);
       error.value = `加载设置失败: ${e}`;
+    } finally {
+      loaded.value = true;
     }
   }
 
   async function toggleAutoLaunch() {
     try {
+      const newValue = !autoLaunch.value;
       // Persist to DB first so that on restart the app knows the desired state.
-      const newValue = String(!autoLaunch.value);
-      await setSetting('auto_launch', newValue);
-      // Then toggle the OS-level autostart.
-      if (autoLaunch.value) {
-        await disable();
-      } else {
-        await enable();
-      }
-      autoLaunch.value = !autoLaunch.value;
+      await setSetting('auto_launch', String(newValue));
+      // Then toggle the OS-level autostart. The backend picks the mechanism:
+      // StartupTask for Store builds, registry Run key otherwise.
+      await invoke('set_autostart', { enabled: newValue });
+      autoLaunch.value = newValue;
     } catch (e) {
       console.error('[settings] toggleAutoLaunch failed:', e);
       error.value = `自动启动切换失败: ${e}`;
@@ -89,5 +96,5 @@ export const useSettingsStore = defineStore('settings', () => {
     // applyTheme again, creating an infinite event loop between windows.
   }
 
-  return { settings, datasources, activeDatasource, theme, autoLaunch, isPortable, error, fetchSettings, setSetting, switchDatasource, toggleTheme, toggleAutoLaunch, applyTheme };
+  return { settings, datasources, activeDatasource, theme, autoLaunch, isPortable, isStoreBuild, loaded, updaterAvailable, error, fetchSettings, setSetting, switchDatasource, toggleTheme, toggleAutoLaunch, applyTheme };
 });

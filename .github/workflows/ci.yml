@@ -1,0 +1,59 @@
+name: CI
+
+# 常规 CI：push / PR 时跑前端类型检查、前端单测、Rust 双编译宇宙检查与测试。
+#
+# 关键点：`--features store` 是一个独立的 Rust 编译宇宙（lib.rs / autostart.rs
+# 中有 5+ 处 #[cfg(feature = "store")] 门控），日常构建和 release.yml 都不会
+# 编译它 —— 若不在常规 CI 里覆盖，store 宇宙的编译破坏只会在手动触发商店
+# 发布工作流时（最糟糕的时机）才暴露。
+#
+# 后端 job 必须跑在 windows-latest：store 宇宙中 Windows 专属代码
+# （commands/autostart.rs 的 StartupTask 模块）只在 windows 目标上参与编译。
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check (vue-tsc)
+        run: npx vue-tsc --noEmit
+
+      - name: Unit tests (vitest)
+        run: npm test
+
+  backend:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          cache-on-failure: true
+
+      - name: cargo check (default feature set)
+        run: cargo check --manifest-path src-tauri/Cargo.toml
+
+      - name: cargo check (store feature universe)
+        run: cargo check --manifest-path src-tauri/Cargo.toml --features store --tests
+
+      - name: cargo test
+        run: cargo test --manifest-path src-tauri/Cargo.toml

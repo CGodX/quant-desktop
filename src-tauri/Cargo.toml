@@ -14,6 +14,19 @@ edition = "2021"
 name = "quant_desktop_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+# `store` targets the Microsoft Store distribution. When enabled:
+#   - the built-in updater plugin is NOT registered (the Microsoft Store
+#     distributes updates itself). The check_update/install_update IPC commands
+#     stay compiled and registered but return early at runtime, so the frontend
+#     gets a clean response instead of an "unknown command" error;
+#   - Windows autostart routes through the packaged-app StartupTask WinRT API
+#     instead of the registry Run key (see src-tauri/src/commands/autostart.rs).
+# WebView2 is NOT bundled: MSIX installs never run the MSI's WebView2 installer
+# action, so the store build relies on the system's Evergreen WebView2 runtime
+# (AppxManifest MinVersion 19041 — a baseline where it is broadly preinstalled).
+store = ["dep:windows"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -35,4 +48,11 @@ thiserror = "2"
 dirs = "5"
 tauri-plugin-updater = "2"
 raw-window-handle = "0.6"
+
+# WinRT StartupTask API for the store build's autostart (Windows only, pulled in
+# by the `store` feature). Same version as the copy already in the dependency
+# tree via tauri, so this adds no extra compilation.
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.61", optional = true, features = ["ApplicationModel"] }
+
 
