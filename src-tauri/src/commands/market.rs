@@ -22,41 +22,34 @@ pub async fn get_market_overview(
     direction: String,
     client: State<'_, Arc<MarketOverviewClient>>,
 ) -> Result<MarketOverview, String> {
-    // 1. 总成交额 —— 新浪指数接口(上证指数 + 深证综指)
-    let turnover = match client.fetch_total_turnover().await {
-        Ok(v) => v,
-        Err(e) => {
-            log::warn!("[market] 成交额获取失败,降级为 0: {}", e);
-            0.0
-        }
-    };
+    // 并行发起:四个请求共用一个 10s 超时的 client,串行时一个慢端点会把整份
+    // 概览拖到最坏 ~40s;join! 并发等待后总耗时约等于最慢的那一个请求。
+    let (turnover, breadth, industry, concept) = tokio::join!(
+        client.fetch_total_turnover(),
+        client.fetch_market_breadth(),
+        client.fetch_sector_ranking("m:90+t:2", &direction),
+        client.fetch_concept_ranking(&direction),
+    );
 
-    // 2. 涨跌家数 —— 东财 push2ex 涨跌分布
-    let (up, down, flat) = match client.fetch_market_breadth().await {
-        Ok(v) => v,
-        Err(e) => {
-            log::warn!("[market] 涨跌家数获取失败,降级为 0: {}", e);
-            (0, 0, 0)
-        }
-    };
+    let turnover = turnover.unwrap_or_else(|e| {
+        log::warn!("[market] 成交额获取失败,降级为 0: {}", e);
+        0.0
+    });
 
-    // 3. 行业板块 —— 东财 push2delay clist
-    let industry = match client.fetch_sector_ranking("m:90+t:2", &direction).await {
-        Ok(v) => v,
-        Err(e) => {
-            log::warn!("[market] 行业板块获取失败,降级为空: {}", e);
-            Vec::new()
-        }
-    };
+    let (up, down, flat) = breadth.unwrap_or_else(|e| {
+        log::warn!("[market] 涨跌家数获取失败,降级为 0: {}", e);
+        (0, 0, 0)
+    });
 
-    // 4. 概念板块 —— 东财 push2delay clist,剔除风格/指数/资金/业绩等非主题概念
-    let concept = match client.fetch_concept_ranking(&direction).await {
-        Ok(v) => v,
-        Err(e) => {
-            log::warn!("[market] 概念板块获取失败,降级为空: {}", e);
-            Vec::new()
-        }
-    };
+    let industry = industry.unwrap_or_else(|e| {
+        log::warn!("[market] 行业板块获取失败,降级为空: {}", e);
+        Vec::new()
+    });
+
+    let concept = concept.unwrap_or_else(|e| {
+        log::warn!("[market] 概念板块获取失败,降级为空: {}", e);
+        Vec::new()
+    });
 
     Ok(MarketOverview {
         turnover,

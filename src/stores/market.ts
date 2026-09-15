@@ -74,6 +74,11 @@ export const useMarketStore = defineStore('market', () => {
   function setDirection(v: MarketDirection) {
     if (direction.value === v) return;
     direction.value = v;
+    // 立即丢弃旧方向的榜单:补拉回来前(失败则直到下次成功)面板会渲染的
+    // 是反方向的旧数据 + 新的「领涨/领跌」标签。成交额/涨跌家数与方向无关,保留。
+    if (overview.value) {
+      overview.value = { ...overview.value, industry: [], concept: [] };
+    }
     fetchOverview();
   }
 

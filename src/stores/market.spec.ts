@@ -123,6 +123,39 @@ describe('market store 刷新调度', () => {
     expect(store.overview?.turnover).toBe(DOWN_DATA);
   });
 
+  it('切换方向立即清空旧榜单,补拉失败也不回退渲染旧数据', async () => {
+    const { reqs, handler } = controllable();
+    overviewHandler = handler;
+
+    const mkWithList = (marker: number): MarketOverview => ({
+      ...mkOverview(marker),
+      industry: [
+        { code: 'BK1', name: '板块一', change_pct: 1, leader_name: null, leader_pct: null, laggard_name: null, laggard_pct: null },
+      ],
+    });
+
+    const store = useMarketStore();
+    void store.startRefresh();
+    await flush();
+    reqs[0].d.resolve(mkWithList(UP_DATA));
+    await flush();
+    expect(store.overview?.industry).toHaveLength(1);
+
+    store.setDirection('down');
+    await flush();
+    // 补拉在途:旧方向的榜单已被丢弃,不会在新标签下反向展示
+    expect(store.overview?.industry).toHaveLength(0);
+    expect(store.overview?.concept).toHaveLength(0);
+    // 成交额/涨跌家数与方向无关,保留
+    expect(store.overview?.turnover).toBe(UP_DATA);
+
+    // 补拉失败 —— 榜单保持为空(错误由面板渲染),而不是回退旧数据
+    reqs[1].d.reject(new Error('boom'));
+    await flush();
+    expect(store.overview?.industry).toHaveLength(0);
+    expect(store.error).toContain('市场概览加载失败');
+  });
+
   it('方向切走又切回时,匹配当前方向的在途响应应当落地', async () => {
     const { reqs, handler } = controllable();
     overviewHandler = handler;

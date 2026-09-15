@@ -83,7 +83,10 @@ impl MarketOverviewClient {
             .await
             .map_err(|e| AppError::network("eastmoney", format!("涨跌家数解析失败: {}", e)))?;
 
-        Ok(parse_breadth(&body).unwrap_or((0, 0, 0)))
+        // JSON 合法但结构不符(缺 data.fenbu / 非数组)要当错误向上抛:
+        // 兜成 (0,0,0) 会让命令层的降级告警永远不触发,UI 静默显示 -- 且日志无痕。
+        parse_breadth(&body)
+            .ok_or_else(|| AppError::parse("eastmoney", "涨跌家数响应缺少 data.fenbu"))
     }
 
     /// 板块排名(行业或概念)。`fs` 为东财筛选串(`m:90+t:2` 行业 / `m:90+t:3` 概念)。

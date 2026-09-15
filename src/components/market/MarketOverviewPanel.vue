@@ -17,8 +17,12 @@ const directionOptions: { key: MarketDirection; label: string }[] = [
   { key: 'down', label: '跌幅榜' },
 ];
 
-function isUp(pct: number) {
-  return pct >= 0;
+/** 涨跌配色:A股惯例红涨绿跌,持平为中性灰 —— 平盘不是涨,不能标红。 */
+function rowClass(pct: number) {
+  return pct > 0 ? 'row-up' : pct < 0 ? 'row-down' : 'row-flat';
+}
+function pctClass(pct: number) {
+  return pct > 0 ? 'pct-up' : pct < 0 ? 'pct-down' : 'pct-flat';
 }
 
 /** 榜单方向决定看哪只成分股:涨幅榜看领涨股,跌幅榜看领跌股(不是同一个字段)。 */
@@ -28,7 +32,8 @@ function leaderOf(s: SectorItem) {
 }
 
 function pctText(pct: number) {
-  return `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`;
+  if (pct === 0) return '0.00%';
+  return `${pct > 0 ? '+' : ''}${pct.toFixed(2)}%`;
 }
 
 /** 背景色条宽度:涨跌幅绝对值相对 10%(主板涨停)归一化,封顶 100%。
@@ -120,7 +125,9 @@ onUnmounted(() => {
         </button>
       </div>
 
-      <div class="sector-columns">
+      <!-- 命令整体失败时错误落地展示;部分字段失败由后端降级,不会走到这里 -->
+      <p v-if="market.error" class="sector-error">{{ market.error }}</p>
+      <div v-else class="sector-columns">
         <div class="sector-column">
           <h4 class="sector-column-title">行业板块</h4>
           <ul v-if="market.overview && market.overview.industry.length > 0" class="sector-list">
@@ -128,12 +135,12 @@ onUnmounted(() => {
               v-for="(s, i) in market.overview.industry"
               :key="s.code"
               class="sector-row"
-              :class="isUp(s.change_pct) ? 'row-up' : 'row-down'"
+              :class="rowClass(s.change_pct)"
             >
-              <span class="sector-bar" aria-hidden="true" :style="{ width: barWidth(s.change_pct) }"></span>
+              <span v-if="s.change_pct !== 0" class="sector-bar" aria-hidden="true" :style="{ width: barWidth(s.change_pct) }"></span>
               <span class="sector-rank tabular-nums" :class="{ 'rank-top': i < 3 }">{{ i + 1 }}</span>
               <span class="sector-name">{{ s.name }}</span>
-              <span class="sector-pct tabular-nums" :class="isUp(s.change_pct) ? 'pct-up' : 'pct-down'">
+              <span class="sector-pct tabular-nums" :class="pctClass(s.change_pct)">
                 {{ pctText(s.change_pct) }}
               </span>
               <span class="sector-leader">
@@ -144,6 +151,7 @@ onUnmounted(() => {
               </span>
             </li>
           </ul>
+          <p v-else-if="market.loading" class="sector-empty">加载中…</p>
           <p v-else class="sector-empty">行业板块暂不可用</p>
         </div>
 
@@ -154,12 +162,12 @@ onUnmounted(() => {
               v-for="(s, i) in market.overview.concept"
               :key="s.code"
               class="sector-row"
-              :class="isUp(s.change_pct) ? 'row-up' : 'row-down'"
+              :class="rowClass(s.change_pct)"
             >
-              <span class="sector-bar" aria-hidden="true" :style="{ width: barWidth(s.change_pct) }"></span>
+              <span v-if="s.change_pct !== 0" class="sector-bar" aria-hidden="true" :style="{ width: barWidth(s.change_pct) }"></span>
               <span class="sector-rank tabular-nums" :class="{ 'rank-top': i < 3 }">{{ i + 1 }}</span>
               <span class="sector-name">{{ s.name }}</span>
-              <span class="sector-pct tabular-nums" :class="isUp(s.change_pct) ? 'pct-up' : 'pct-down'">
+              <span class="sector-pct tabular-nums" :class="pctClass(s.change_pct)">
                 {{ pctText(s.change_pct) }}
               </span>
               <span class="sector-leader">
@@ -170,6 +178,7 @@ onUnmounted(() => {
               </span>
             </li>
           </ul>
+          <p v-else-if="market.loading" class="sector-empty">加载中…</p>
           <p v-else class="sector-empty">概念板块暂不可用</p>
         </div>
       </div>
@@ -405,6 +414,8 @@ onUnmounted(() => {
 }
 .pct-up { background: var(--color-up-bg); color: var(--color-up); }
 .pct-down { background: var(--color-down-bg); color: var(--color-down); }
+/* 持平:中性底 + 次要文字色,不参与红绿语义 */
+.pct-flat { background: var(--color-surface-2); color: var(--color-text-secondary); }
 /* 104px ≈ 领涨(26px) + 间距 + 5 个汉字 / XD·*ST 前缀,是 A 股简称的实际上限。
    左对齐:各行的「领涨」二字对齐成一条竖线,长短不一的是右侧股名,右侧本是空白 */
 .sector-leader {
@@ -426,5 +437,13 @@ onUnmounted(() => {
   padding: var(--space-2) 0;
   font-size: var(--text-xs);
   color: var(--color-text-tertiary);
+}
+
+/* 拉取失败 —— 用次要色而非红/绿:A股语境里红绿有涨跌含义,不该挪作错误提示 */
+.sector-error {
+  margin: 0;
+  padding: var(--space-2) 0;
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
 }
 </style>
