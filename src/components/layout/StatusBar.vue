@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
-import { NPopover } from 'naive-ui';
 import { useSettingsStore } from '@/stores/settings';
 import { useUpdaterStore } from '@/stores/updater';
 import { useUpdateCheck } from '@/composables/useUpdateCheck';
@@ -11,44 +10,13 @@ const updater = useUpdaterStore();
 const { manualCheck } = useUpdateCheck();
 const appVersion = ref('');
 
-// 微信群二维码：使用 GitHub 在线地址，二维码过期后只需替换仓库中的图片文件即可，用户端无需重新打包升级。
-// 图片对应仓库路径为 public/qrcode.jpg，如你改存到其它路径，请同步修改下面的 URL。
-const QRCODE_URL = 'https://raw.githubusercontent.com/Leaderxin/quant-desktop/master/public/qrcode.png';
-
-const props = withDefaults(defineProps<{
-  copyright?: string;
-  contactEmail?: string;
-  qrcodeSrc?: string;
-}>(), {
-  copyright: '© 2026 Leaderxin',
-  contactEmail: 'shazhoulen@outlook.com',
-  qrcodeSrc: QRCODE_URL,
-});
-
-// 打包进安装包的本地兜底二维码（远程加载失败时回退用）
-const QRCODE_FALLBACK_URL = '/qrcode.png';
-// 当前实际展示的二维码地址：远程失败 → 回退本地旧图；本地也失败 → 显示占位提示
-const qrSrc = ref(props.qrcodeSrc);
-const qrFailed = ref(false);
-
-function onQrError() {
-  if (qrSrc.value !== QRCODE_FALLBACK_URL) {
-    qrSrc.value = QRCODE_FALLBACK_URL;
-  } else {
-    qrFailed.value = true;
-  }
-}
+const copyright = '© 2026 Leaderxin · Fork 维护 CGodX';
 
 onMounted(async () => {
   try {
     appVersion.value = await getVersion();
   } catch {
     appVersion.value = '';
-  }
-  // Preload QR code image so popover has correct dimensions on first open
-  if (props.qrcodeSrc) {
-    const img = new Image();
-    img.src = props.qrcodeSrc;
   }
 });
 </script>
@@ -103,65 +71,6 @@ onMounted(async () => {
       </button>
     </div>
 
-    <!-- Zone 3: Contact -->
-    <div class="sb-zone sb-contact">
-      <a class="sb-email" :href="`mailto:${contactEmail}`" title="商务合作">
-        <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
-          <rect x="1.5" y="3.5" width="13" height="9" rx="1"/>
-          <path d="M1.5 4l7 4.5 7-4.5"/>
-        </svg>
-        {{ contactEmail }}
-      </a>
-
-      <NPopover trigger="click" placement="top" :show-arrow="true">
-        <template #trigger>
-          <button class="sb-qr-btn" aria-label="点击入群">
-            <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
-              <path d="M11.176 14.429c-2.665 0-4.826-1.8-4.826-4.018 0-2.22 2.159-4.02 4.824-4.02S16 8.191 16 10.411c0 1.21-.65 2.301-1.666 3.036a.324.324 0 00-.12.366l.218.81a.616.616 0 01.029.117.166.166 0 01-.162.162.177.177 0 01-.092-.03l-1.057-.61a.519.519 0 00-.256-.074.509.509 0 00-.142.021 5.668 5.668 0 01-1.576.22z"/>
-              <path d="M9.064 9.542a.647.647 0 10.557-1 .645.645 0 00-.646.647.615.615 0 00.09.353zM12.296 9.543a.646.646 0 10.546-1 .645.645 0 00-.644.644.627.627 0 00.098.356z"/>
-              <path d="M0 6.826c0 1.455.781 2.765 2.001 3.656a.385.385 0 01.143.439l-.161.6-.1.373a.499.499 0 00-.032.14.192.192 0 00.193.193c.039 0 .077-.01.111-.029l1.268-.733a.622.622 0 01.308-.088c.058 0 .116.009.171.025a6.83 6.83 0 001.625.26 4.45 4.45 0 01-.177-1.251c0-2.936 2.785-5.02 5.824-5.02.05 0 .1 0 .15.002C10.587 3.429 8.392 2 5.796 2 2.596 2 0 4.16 0 6.826z"/>
-              <path d="M4.632 5.271a.77.77 0 11-1.54 0 .77.77 0 011.54 0zM8.507 5.271a.77.77 0 11-1.54 0 .77.77 0 011.54 0z"/>
-            </svg>
-            点击入群
-          </button>
-        </template>
-        <div class="qr-popover">
-          <template v-if="!qrFailed">
-            <img
-              :src="qrSrc"
-              alt="微信群二维码"
-              class="qr-image"
-              @error="onQrError"
-            />
-            <p v-if="qrSrc === QRCODE_FALLBACK_URL" style="font-size: 10px; color: var(--color-text-tertiary); margin-top: 6px;">在线二维码加载失败，已显示本地版本</p>
-          </template>
-          <div v-else class="qr-placeholder">
-            <svg viewBox="0 0 100 100" width="120" height="120" fill="none">
-              <rect x="10" y="10" width="30" height="30" rx="2" stroke="currentColor" stroke-width="2"/>
-              <rect x="10" y="10" width="14" height="14" fill="currentColor"/>
-              <rect x="26" y="10" width="14" height="14" fill="currentColor"/>
-              <rect x="10" y="26" width="14" height="14" fill="currentColor"/>
-              <rect x="26" y="26" width="14" height="14" fill="currentColor"/>
-              <rect x="60" y="10" width="30" height="30" rx="2" stroke="currentColor" stroke-width="2"/>
-              <rect x="60" y="10" width="14" height="14" fill="currentColor"/>
-              <rect x="76" y="10" width="14" height="14" fill="currentColor"/>
-              <rect x="60" y="26" width="14" height="14" fill="currentColor"/>
-              <rect x="76" y="26" width="14" height="14" fill="currentColor"/>
-              <rect x="10" y="60" width="30" height="30" rx="2" stroke="currentColor" stroke-width="2"/>
-              <rect x="10" y="60" width="14" height="14" fill="currentColor"/>
-              <rect x="26" y="60" width="14" height="14" fill="currentColor"/>
-              <rect x="10" y="76" width="14" height="14" fill="currentColor"/>
-              <rect x="26" y="76" width="14" height="14" fill="currentColor"/>
-              <rect x="44" y="44" width="12" height="12" fill="currentColor"/>
-              <rect x="60" y="44" width="12" height="12" fill="currentColor"/>
-              <rect x="44" y="60" width="12" height="12" fill="currentColor"/>
-              <rect x="60" y="60" width="12" height="12" fill="currentColor"/>
-            </svg>
-            <p style="font-size: 10px; color: var(--color-text-tertiary); margin-top: 6px;">二维码加载失败，请稍后重试</p>
-          </div>
-        </div>
-      </NPopover>
-    </div>
   </footer>
 </template>
 
@@ -304,56 +213,4 @@ onMounted(async () => {
   transform: translateX(11px);
 }
 
-/* ── Zone 3: Contact ── */
-.sb-email {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--color-text-tertiary);
-  text-decoration: none;
-  transition: color var(--transition-fast);
-  cursor: pointer;
-}
-.sb-email:hover {
-  color: var(--color-accent);
-}
-
-.sb-qr-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  padding: 1px 8px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: var(--color-accent);
-  color: #fff;
-  font-size: 10px;
-  font-family: var(--font-sans);
-  font-weight: var(--font-weight-medium);
-  cursor: pointer;
-  transition: filter var(--transition-fast);
-}
-.sb-qr-btn:hover {
-  filter: brightness(1.2);
-}
-
-/* ── QR popover ── */
-.qr-popover {
-  padding: 8px;
-  text-align: center;
-}
-.qr-image {
-  display: block;
-  width: min(200px, calc(100vw - 80px));
-  height: 200px;
-  border-radius: var(--radius-sm);
-  object-fit: contain;
-}
-.qr-placeholder {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  color: var(--color-text-tertiary);
-  padding: 8px;
-}
 </style>

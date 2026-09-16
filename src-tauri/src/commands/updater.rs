@@ -53,7 +53,7 @@ pub async fn do_check_update(app: &AppHandle) -> Result<Option<UpdateInfo>, Stri
         release_date: date,
         notes: body,
         release_url: format!(
-            "https://github.com/Leaderxin/quant-desktop/releases/tag/v{}",
+            "https://github.com/CGodX/quant-desktop/releases/tag/v{}",
             latest_version.strip_prefix('v').unwrap_or(&latest_version)
         ),
         download_size: None,

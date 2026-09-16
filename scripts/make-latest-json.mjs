@@ -2,8 +2,8 @@
 /**
  * Build latest.json manifest for tauri-plugin-updater (unsigned).
  *
- * Since pubkey is not configured, signature verification is disabled.
- * Only platform URLs are needed.
+ * Legacy helper: output has no signatures and is NOT suitable for the signed updater.
+ * Release builds must use tauri-action and a matching fork signing key.
  *
  * Usage:
  *   node scripts/make-latest-json.mjs <version> <notes-json> <release-dir> <output-file>
@@ -49,7 +49,7 @@ for (const file of files) {
   const platform = detectPlatform(file);
   if (!platform) continue;
   platforms[platform] = {
-    url: `https://github.com/Leaderxin/quant-desktop/releases/download/${tag}/${file}`
+    url: `https://github.com/CGodX/quant-desktop/releases/download/${tag}/${file}`
   };
 }
 

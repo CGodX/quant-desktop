@@ -2,12 +2,6 @@
 
 > 🚀 **免费 · 专业 · 零打扰** —— 桌面级 A 股实时行情监控工具
 
-<p align="center">
-  <img src="public/qrcode.png" width="200" alt="微信运维群二维码" />
-  <br/>
-  <sub>👆 扫码加入用户交流群</sub>
-</p>
-
 ---
 
 ## 💡 你是否遇到过这些痛点？
@@ -134,7 +128,7 @@ QuantDesktop 是一款轻量级的桌面端 A 股行情监控工具，支持 **W
 
 ### 下载
 
-前往 [GitHub Releases](https://github.com/Leaderxin/quant-desktop/releases) 下载最新版本：
+前往 [GitHub Releases](https://github.com/CGodX/quant-desktop/releases) 下载最新版本：
 
 | 平台 | 安装包格式 |
 |------|-----------|
@@ -180,8 +174,9 @@ QuantDesktop 是一款轻量级的桌面端 A 股行情监控工具，支持 **W
 
 QuantDesktop 完全开源，源码可见，自由使用、修改和分享。
 
-- **GitHub 仓库**：[Leaderxin/quant-desktop](https://github.com/Leaderxin/quant-desktop)
-- **Bug 反馈 & 功能建议**：欢迎提交 [Issue](https://github.com/Leaderxin/quant-desktop/issues)
+- **Fork 仓库**：[CGodX/quant-desktop](https://github.com/CGodX/quant-desktop)
+- **原作**：[Leaderxin/quant-desktop](https://github.com/Leaderxin/quant-desktop)，原作者版权和 LICENSE 保留
+- **Bug 反馈 & 功能建议**：欢迎提交 [Issue](https://github.com/CGodX/quant-desktop/issues)
 - **想参与开发？** 欢迎提交 PR，一起把工具做得更好
 
 ---
@@ -201,3 +196,7 @@ QuantDesktop 的核心理念是 **"不打扰的看盘"**：
 <p align="center">
   <b>QuantDesktop v1.4.7</b> — 免费实时 A 股看盘，从桌面开始。
 </p>
+
+### Fork 更新发布
+
+本分支的应用更新及下载链接指向 `CGodX/quant-desktop`。发布自动更新前，需为 fork 生成独立签名密钥，将公钥配置到 `src-tauri/tauri.conf.json`，并在仓库 Actions Secrets 配置对应私钥和密码。当前保留的上游公钥不能验证使用其他密钥签名的更新包；仅修改仓库地址不代表更新发布链路已完成。

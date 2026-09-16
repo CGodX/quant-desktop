@@ -143,7 +143,7 @@ QuantDesktop 内置了中国 A 股交易时段检测：
 
 ### 下载
 
-前往 [GitHub Releases](https://github.com/Leaderxin/quant-desktop/releases) 下载最新版本：
+前往 [GitHub Releases](https://github.com/CGodX/quant-desktop/releases) 下载最新版本：
 
 | 平台 | 安装包格式 |
 |------|-----------|
@@ -202,19 +202,8 @@ QuantDesktop 仍在持续迭代中：
 QuantDesktop 采用 [PolyForm Noncommercial License 1.0](https://github.com/Leaderxin/quant-desktop/blob/master/LICENSE) 发布 —— 源码可见，自由使用、修改和分享，但禁止任何商业用途。如需商用授权，请联系作者。
 
 - **GitHub 仓库**：[https://github.com/Leaderxin/quant-desktop](https://github.com/Leaderxin/quant-desktop)
-- **Bug 反馈 & 功能建议**：欢迎提交 [Issue](https://github.com/Leaderxin/quant-desktop/issues)
+- **Bug 反馈 & 功能建议**：欢迎提交 [Issue](https://github.com/CGodX/quant-desktop/issues)
 - **想参与开发？** 欢迎提交 PR，一起把工具做得更好
-
----
-
-## 💬 加入交流群
-
-欢迎加入 QuantDesktop 用户交流群，获取最新版本通知、反馈问题、交流使用心得：
-
-![微信群二维码](https://placeholder/quant-desktop-wechat-qrcode.jpg)
-<!-- TODO: 替换为微信群二维码图片，建议尺寸：300×300px 左右，居中展示 -->
-
-> 💡 如果二维码过期，请前往 [GitHub Issues](https://github.com/Leaderxin/quant-desktop/issues) 留言获取最新入群方式。
 
 ---
 
