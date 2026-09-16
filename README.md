@@ -1,6 +1,6 @@
 # QuantDesktop · CGodX Fork
 
-基于 [Leaderxin/quant-desktop](https://github.com/Leaderxin/quant-desktop) 维护的非商业分支，当前版本 **v1.5.1**。本 fork 通过 GitHub Releases 发布，不通过应用商店分发；原作者版权和许可证保留。
+基于 [Leaderxin/quant-desktop](https://github.com/Leaderxin/quant-desktop) 维护的非商业分支，当前版本 **v1.5.2**。本 fork 通过 GitHub Releases 发布，不通过应用商店分发；原作者版权和许可证保留。
 
 > 🚀 **免费 · 专业 · 零打扰** —— 桌面级 A 股实时行情监控工具
 
@@ -198,12 +198,13 @@ QuantDesktop 的核心理念是 **"不打扰的看盘"**：
 ---
 
 <p align="center">
-  <b>QuantDesktop v1.5.1</b> — 免费实时 A 股看盘，从桌面开始。
+  <b>QuantDesktop v1.5.2</b> — 免费实时 A 股看盘，从桌面开始。
 </p>
 
 ### 更新方式
 
-- **Windows 安装版**：下载 `.exe` 或 `.msi` 安装包。应用内更新只检查本 fork 的 Releases，更新包使用本 fork 的签名密钥验证。
+- **Windows 安装版**：下载 `.exe` 或 `.msi` 安装包。自 v1.5.2 起，`.exe` 默认按所有用户安装到 `C:\Program Files\quant-desktop`，安装及更新时需要管理员授权；日常使用无需以管理员身份运行。自选股、成本持仓和设置仍存放在当前用户的 `%APPDATA%\quant-desktop`。应用内更新只检查本 fork 的 Releases，更新包使用本 fork 的签名密钥验证。
+- **从用户目录迁移至 Program Files**：已经安装的旧版不会仅因配置改变而自动搬家。需要迁移时，先退出应用并备份 `%APPDATA%\quant-desktop`，卸载旧版时保留应用数据，再运行新版安装包并确认安装路径。
 - **Windows 便携版**：下载名称含 `portable` 的 ZIP，解压后运行，保留 `portable.dat`。便携版不使用内置更新，升级时退出应用、备份数据，再用新版程序替换旧版；保留原数据目录。
 - **从上游版本迁移**：首次请手动安装本 fork 的版本。上游版本内置的更新地址及公钥不同，不能自动切换至本 fork。
 - **版本记录**：参见 [CHANGELOG.md](CHANGELOG.md)。后续版本使用同一签名密钥发布；私钥只保存在维护者本机及 GitHub Actions Secrets，不进入仓库。

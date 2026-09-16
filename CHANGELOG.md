@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.5.2 (2026-09-16)
+
+### Changed
+- Windows `.exe` 安装包改为所有用户安装，新装默认目录为 `C:\Program Files\quant-desktop`，安装及更新需要管理员授权
+- 用户数据仍位于 `%APPDATA%\quant-desktop`，README 补充从旧版用户目录安装迁移的方法；便携版使用方式不变
+
 ## v1.5.1 (2026-09-16)
 
 首个 CGodX fork 发布版本，基于上游 v1.5.0。首次使用请从本仓库 Releases 手动下载安装；后续安装版通过本 fork 的更新源和签名验证更新，便携版手动替换程序。不通过应用商店发布。
