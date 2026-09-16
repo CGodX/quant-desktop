@@ -1,6 +1,6 @@
 # QuantDesktop · CGodX Fork
 
-基于 [Leaderxin/quant-desktop](https://github.com/Leaderxin/quant-desktop) 维护的非商业分支，当前版本 **v1.5.2**。本 fork 通过 GitHub Releases 发布，不通过应用商店分发；原作者版权和许可证保留。
+基于 [Leaderxin/quant-desktop](https://github.com/Leaderxin/quant-desktop) 维护的非商业分支，当前版本 **v1.5.3**。本 fork 通过 GitHub Releases 发布，不通过应用商店分发；原作者版权和许可证保留。
 
 > 🚀 **免费 · 专业 · 零打扰** —— 桌面级 A 股实时行情监控工具
 
@@ -198,7 +198,7 @@ QuantDesktop 的核心理念是 **"不打扰的看盘"**：
 ---
 
 <p align="center">
-  <b>QuantDesktop v1.5.2</b> — 免费实时 A 股看盘，从桌面开始。
+  <b>QuantDesktop v1.5.3</b> — 免费实时 A 股看盘，从桌面开始。
 </p>
 
 ### 更新方式
