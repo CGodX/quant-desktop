@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, h, inject, onMounted } from 'vue';
-import { NButton, NDataTable, NDropdown, NSwitch } from 'naive-ui';
+import { ref, h, inject, onMounted, computed } from 'vue';
+import { NButton, NDataTable, NDropdown, NSwitch, useMessage } from 'naive-ui';
 import type { DataTableColumns } from 'naive-ui';
 import { invoke } from '@tauri-apps/api/core';
 import { useWatchlistStore } from '@/stores/watchlist';
@@ -9,6 +9,8 @@ import { useMarketStore } from '@/stores/market';
 import type { WatchItem } from '@/types';
 import { formatPrice, formatVolume, formatCode, cnCategory } from '@/utils/format';
 import AddStockDialog from './AddStockDialog.vue';
+import PositionDialog from './PositionDialog.vue';
+import { positionProfit, formatProfit } from '@/utils/position';
 import MarketTag from './MarketTag.vue';
 import StockDetail from '@/components/detail/StockDetail.vue';
 import { CLEAR_INDEX_DETAIL_KEY } from '@/utils/keys';
@@ -17,6 +19,18 @@ const watchlist = useWatchlistStore();
 const quoteStore = useQuoteStore();
 const market = useMarketStore();
 const showAddDialog = ref(false);
+const positionItem = ref<WatchItem | null>(null);
+const message = useMessage();
+const pinPending = ref(new Set<number>());
+
+async function togglePinned(row: WatchItem) {
+  if (pinPending.value.has(row.id)) return;
+  pinPending.value.add(row.id);
+  try {
+    await watchlist.setTickerPinned(row.id, !row.ticker_pinned);
+  } catch (e) { message.error(`固定关注设置失败：${e}`); }
+  finally { pinPending.value.delete(row.id); }
+}
 
 const indexDetailCoord = inject<{
   clearIndexDetail: () => void;
@@ -41,8 +55,8 @@ const selectedRow = ref<WatchItem | null>(null);
 function handleContextMenu(e: MouseEvent, row: WatchItem) {
   e.preventDefault();
   // Clamp menu position to viewport so it never renders off-screen
-  const menuW = 140; // approximate menu width
-  const menuH = 200; // approximate menu height
+  const menuW = 210; // approximate menu width
+  const menuH = 280; // approximate menu height
   ctxMenuX.value = Math.min(e.clientX, window.innerWidth - menuW);
   ctxMenuY.value = Math.min(e.clientY, window.innerHeight - menuH);
   ctxMenuItem.value = row;
@@ -112,6 +126,7 @@ const iconDelete = () => h('svg', { viewBox: '0 0 16 16', width: 14, height: 14,
 ]);
 
 const ctxOptions = [
+  { label: '设置成本 / 持仓', key: 'position' },
   { label: '置顶', key: 'top', icon: iconTop },
   { label: '上移', key: 'up', icon: iconUp },
   { label: '下移', key: 'down', icon: iconDown },
@@ -119,8 +134,18 @@ const ctxOptions = [
   { label: '删除', key: 'delete', icon: iconDelete },
 ];
 
+function optionsFor(row: WatchItem | null) {
+  return [
+    { label: row?.ticker_pinned ? '取消行情条固定' : '固定在行情条顶部', key: 'ticker-pin', disabled: !row || pinPending.value.has(row.id) },
+    ...ctxOptions,
+  ];
+}
+const contextOptions = computed(() => optionsFor(ctxMenuItem.value));
+
 function handleCtxSelect(key: string) {
   switch (key) {
+    case 'ticker-pin': if (ctxMenuItem.value) void togglePinned(ctxMenuItem.value); showCtxMenu.value = false; break;
+    case 'position': positionItem.value = ctxMenuItem.value; showCtxMenu.value = false; break;
     case 'top': handleMoveTop(); break;
     case 'up': handleMoveUp(); break;
     case 'down': handleMoveDown(); break;
@@ -130,13 +155,13 @@ function handleCtxSelect(key: string) {
 
 const columns: DataTableColumns<WatchItem> = [
   {
-    title: '代码', key: 'code', width: 72,
+    title: '代码', key: 'code', width: 72, fixed: 'left',
     render(row) {
       return h('span', { class: 'code-text' }, formatCode(row.code));
     }
   },
   {
-    title: '名称', key: 'name', width: 168,
+    title: '名称', key: 'name', width: 150, fixed: 'left',
     render(row) {
       return h('div', { class: 'name-cell' }, [
         h(MarketTag, { code: row.code, category: cnCategory(row.code) }),
@@ -233,31 +258,52 @@ const columns: DataTableColumns<WatchItem> = [
     }
   },
   {
-    title: '行情条播报', key: 'ticker_enabled', width: 96,
+    title: '成本 / 股数', key: 'position', width: 120,
     render(row) {
-      // 包一层 div 并阻止冒泡：表格行的 onClick 会展开/收起详情面板，
-      // 不拦截的话拨开关会连带触发。
-      return h(
-        'div',
-        {
-          class: 'ticker-toggle-cell',
-          onClick: (e: MouseEvent) => e.stopPropagation(),
-        },
-        [
+      const text = row.cost_price == null ? '--' : `${row.cost_price} / ${row.quantity}`;
+      return h('span', { class: 'position-summary', title: text }, text);
+    }
+  },
+  {
+    title: '持仓盈亏', key: 'profit', width: 110,
+    sorter: (a: WatchItem, b: WatchItem) => {
+      const pa = positionProfit(quoteStore.getQuote(a.code, a.market)?.price, a.cost_price, a.quantity);
+      const pb = positionProfit(quoteStore.getQuote(b.code, b.market)?.price, b.cost_price, b.quantity);
+      if (pa === null) return pb === null ? 0 : -1;
+      if (pb === null) return 1;
+      return pa - pb;
+    },
+    render(row) {
+      const amount = positionProfit(quoteStore.getQuote(row.code, row.market)?.price, row.cost_price, row.quantity);
+      return h('span', { class: `pct-col ${amount !== null && amount > 0 ? 'up' : amount !== null && amount < 0 ? 'down' : ''}` }, formatProfit(amount));
+    }
+  },
+  {
+    title: '操作', key: 'actions', width: 190, fixed: 'right',
+    render(row) {
+      return h('div', { class: 'watch-actions', onClick: (e: MouseEvent) => e.stopPropagation() }, [
+        h(NButton, {
+          size: 'tiny', quaternary: true,
+          onClick: () => { positionItem.value = row; },
+        }, { default: () => '设置成本' }),
+        h('label', { class: 'broadcast-action' }, [
+          h('span', '播报'),
           h(NSwitch, {
-            value: row.ticker_enabled,
-            size: 'small',
+            value: row.ticker_enabled, size: 'small',
             'aria-label': `${row.name} 行情条播报`,
-            'onUpdate:value': (v: boolean) => {
-              // store 内部已 try/catch 并回滚，不会 reject，这里无需再兜错。
-              void watchlist.setTickerEnabled(row.id, v);
-            },
+            'onUpdate:value': (v: boolean) => { void watchlist.setTickerEnabled(row.id, v).catch((e) => message.error(`播报设置失败：${e}`)); },
           }),
-        ],
-      );
+        ]),
+        h(NDropdown, {
+          trigger: 'click', options: optionsFor(row).filter((option) => option.key !== 'position'),
+          onSelect: (key: string) => { ctxMenuItem.value = row; handleCtxSelect(key); },
+        }, { default: () => h(NButton, { size: 'tiny', quaternary: true, 'aria-label': `${row.name} 更多操作` }, { default: () => '更多' }) }),
+      ]);
     }
   },
 ];
+
+const tableWidth = columns.reduce((total, column) => total + Number(column.width ?? 0), 0);
 
 defineExpose({ clearSelection: () => { selectedRow.value = null; } });
 </script>
@@ -292,6 +338,9 @@ defineExpose({ clearSelection: () => { selectedRow.value = null; } });
     <NDataTable
       v-else
       :columns="columns"
+      :scroll-x="tableWidth"
+      :scrollbar-props="{ trigger: 'none' }"
+      table-layout="fixed"
       :data="watchlist.items"
       :bordered="false"
       :single-line="true"
@@ -321,12 +370,13 @@ defineExpose({ clearSelection: () => { selectedRow.value = null; } });
     />
 
     <AddStockDialog v-model:show="showAddDialog" />
+    <PositionDialog :item="positionItem" @close="positionItem = null" />
 
     <NDropdown
       :show="showCtxMenu"
       :x="ctxMenuX"
       :y="ctxMenuY"
-      :options="ctxOptions"
+      :options="contextOptions"
       placement="bottom-start"
       trigger="manual"
       @select="handleCtxSelect"
@@ -431,9 +481,13 @@ defineExpose({ clearSelection: () => { selectedRow.value = null; } });
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-:deep(.ticker-toggle-cell) {
+:deep(.watch-actions), :deep(.broadcast-action) {
   display: flex;
   align-items: center;
   height: 100%;
+  gap: 6px;
+  white-space: nowrap;
 }
+:deep(.broadcast-action) { font-size: 11px; gap: 4px; }
+:deep(.position-summary) { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>
