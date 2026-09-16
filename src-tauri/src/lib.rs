@@ -41,7 +41,15 @@ mod windows_util {
     const SWP_NOACTIVATE: u32 = 0x0010;
     const SWP_FRAMECHANGED: u32 = 0x0020;
 
+    #[repr(C)]
+    #[derive(Default)]
+    struct Rect { left: i32, top: i32, right: i32, bottom: i32 }
+
     extern "system" {
+        fn GetWindow(hwnd: HWND, command: u32) -> HWND;
+        fn GetClassNameW(hwnd: HWND, name: *mut u16, capacity: i32) -> i32;
+        fn GetWindowRect(hwnd: HWND, rect: *mut Rect) -> i32;
+        fn IsWindowVisible(hwnd: HWND) -> i32;
         fn GetAsyncKeyState(vKey: i32) -> i16;
         fn GetWindowLongPtrW(hwnd: HWND, nIndex: i32) -> isize;
         fn SetWindowLongPtrW(hwnd: HWND, nIndex: i32, dwNewLong: isize) -> isize;
@@ -58,6 +66,41 @@ mod windows_util {
 
     pub fn primary_button_down() -> bool {
         unsafe { GetAsyncKeyState(0x01) < 0 }
+    }
+
+    /// Explorer can raise its own topmost windows above ours. Only repair an
+    /// overlapping taskbar; leave other applications and system flyouts alone.
+    pub unsafe fn keep_above_taskbar(hwnd: isize) -> Result<(), String> {
+        let hwnd = hwnd as HWND;
+        let mut ticker = Rect::default();
+        if GetWindowRect(hwnd, &mut ticker) == 0 { return Err(std::io::Error::last_os_error().to_string()); }
+        let mut above = GetWindow(hwnd, 3); // GW_HWNDPREV
+        // A bounded walk also tolerates Explorer recreating windows mid-scan.
+        for _ in 0..1024 {
+            if above.is_null() { break; }
+            let mut name = [0u16; 64];
+            let len = GetClassNameW(above, name.as_mut_ptr(), name.len() as i32);
+            let class = String::from_utf16_lossy(&name[..len.max(0) as usize]);
+            if IsWindowVisible(above) != 0 && matches!(class.as_str(), "Shell_TrayWnd" | "Shell_SecondaryTrayWnd") {
+                let mut bar = Rect::default();
+                if GetWindowRect(above, &mut bar) != 0 && ticker.left < bar.right && ticker.right > bar.left
+                    && ticker.top < bar.bottom && ticker.bottom > bar.top {
+                    // Reapplying TOPMOST alone can leave an already-topmost
+                    // window below Explorer. Reset the band before raising it.
+                    if SetWindowPos(hwnd, -2isize as HWND, 0, 0, 0, 0,
+                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE) == 0 {
+                        return Err(std::io::Error::last_os_error().to_string());
+                    }
+                    if SetWindowPos(hwnd, -1isize as HWND, 0, 0, 0, 0,
+                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE) == 0 {
+                        return Err(std::io::Error::last_os_error().to_string());
+                    }
+                    break;
+                }
+            }
+            above = GetWindow(above, 3);
+        }
+        Ok(())
     }
 
     pub unsafe fn set_bounds(hwnd: isize, x: i32, y: i32, width: u32, height: u32) -> Result<(), String> {
@@ -558,16 +601,23 @@ pub fn run() {
                     }
                 });
 
-                // Taskbar/work-area changes do not always produce a window-moved event.
-                // Repair after mouse release, never fight an active drag or resize.
+                // Explorer may reorder its taskbar without moving our window.
+                // Restore z-order promptly, but repair off-screen positions only after dragging.
                 let recovery_window = ticker.clone();
                 tauri::async_runtime::spawn(async move {
-                    let mut interval = tokio::time::interval(std::time::Duration::from_secs(2));
+                    let mut interval = tokio::time::interval(std::time::Duration::from_millis(250));
                     loop {
                         interval.tick().await;
-                        #[cfg(target_os = "windows")]
-                        if windows_util::primary_button_down() { continue; }
                         if !recovery_window.is_visible().unwrap_or(false) { continue; }
+                        #[cfg(target_os = "windows")]
+                        {
+                            if let Ok(hwnd) = recovery_window.hwnd() {
+                                if let Err(e) = unsafe { windows_util::keep_above_taskbar(hwnd.0 as isize) } {
+                                    log::warn!("[ticker] taskbar z-order recovery failed: {e}");
+                                }
+                            }
+                            if windows_util::primary_button_down() { continue; }
+                        }
                         if let Err(e) = commands::window::ensure_ticker_visible(&recovery_window) {
                             log::warn!("[ticker] visibility recovery failed: {e}");
                         }

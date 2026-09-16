@@ -27,7 +27,7 @@ pub fn apply_profit_visibility(app: &tauri::AppHandle, db: &Database, visible: b
     let current = outer_bounds(&window)?;
     let inner = window.inner_size().map_err(|e| e.to_string())?;
     let scale = window.scale_factor().map_err(|e| e.to_string())?;
-    let area = work_area(&window, false)?;
+    let area = placement_area(&window)?;
     let previous = db.get_setting("ticker_width_anchor").ok().flatten()
         .and_then(|v| serde_json::from_str::<WidthAnchor>(&v).ok());
     let right = match previous {
@@ -80,7 +80,7 @@ pub fn set_ticker_market_visible(app: tauri::AppHandle, db: tauri::State<'_, Arc
     let current = outer_bounds(&window)?;
     let inner = window.inner_size().map_err(|e| e.to_string())?;
     let scale = window.scale_factor().map_err(|e| e.to_string())?;
-    let area = work_area(&window, false)?;
+    let area = placement_area(&window)?;
     let rows = (((inner.height as f64 / scale - 8.0) / 15.0).round() as u32).saturating_sub(u32::from(market_visible(&db)));
     let height = ((ticker_height(rows) + if visible { 15 } else { 0 }) as f64 * scale).round() as u32 + current.height.saturating_sub(inner.height);
     if height > area.height { return Err("空间不足，无法增加大盘行情行".into()); }
@@ -113,6 +113,22 @@ fn outer_bounds(window: &tauri::WebviewWindow) -> Result<Bounds, String> {
     let pos = window.outer_position().map_err(|e| e.to_string())?;
     let size = window.outer_size().map_err(|e| e.to_string())?;
     Ok(Bounds { x: pos.x, y: pos.y, width: size.width, height: size.height })
+}
+
+// Windows users may deliberately place two rows over the taskbar.
+// Other platforms retain their existing desktop work-area behavior.
+fn placement_area(window: &tauri::WebviewWindow) -> Result<Bounds, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let monitor = window.current_monitor().map_err(|e| e.to_string())?
+            .or(window.primary_monitor().map_err(|e| e.to_string())?)
+            .ok_or("未找到可用显示器")?;
+        let position = monitor.position();
+        let size = monitor.size();
+        Ok(Bounds { x: position.x, y: position.y, width: size.width, height: size.height })
+    }
+    #[cfg(not(target_os = "windows"))]
+    { work_area(window, false) }
 }
 
 fn work_area(window: &tauri::WebviewWindow, primary: bool) -> Result<Bounds, String> {
@@ -154,7 +170,7 @@ fn resize_ticker_at_least(window: &tauri::WebviewWindow, rows: u32, edge: Resize
     let current = outer_bounds(window)?;
     let inner = window.inner_size().map_err(|e| e.to_string())?;
     let frame = (current.width.saturating_sub(inner.width), current.height.saturating_sub(inner.height));
-    let (rows, bounds) = resize_bounds_with_header(current, frame, scale, rows, edge, work_area(window, false)?, market_height(window));
+    let (rows, bounds) = resize_bounds_with_header(current, frame, scale, rows, edge, placement_area(window)?, market_height(window));
     if rows < minimum { return Err("空间不足：请先取消部分固定关注，至少保留一行轮播".into()); }
     apply_bounds(window, bounds, frame)?;
     Ok(rows)
@@ -169,7 +185,7 @@ pub fn reserve_ticker_rows(app: &tauri::AppHandle, db: &Database, pinned_count: 
     let current_rows = ((inner.height as f64 / scale - 8.0 - market_height(&window) as f64) / 15.0).round().max(2.0) as u32;
     if current_rows >= minimum { return Ok(()); }
     let current = outer_bounds(&window)?;
-    let area = work_area(&window, false)?;
+    let area = placement_area(&window)?;
     let (preferred, fallback) = if current.y * 2 + current.height as i32 > area.y * 2 + area.height as i32 {
         (ResizeEdge::Top, ResizeEdge::Bottom)
     } else { (ResizeEdge::Bottom, ResizeEdge::Top) };
@@ -181,11 +197,14 @@ pub fn reserve_ticker_rows(app: &tauri::AppHandle, db: &Database, pinned_count: 
 /// Repair the actual position, not just the saved coordinates.
 pub fn ensure_ticker_visible(window: &tauri::WebviewWindow) -> Result<(), String> {
     let current = outer_bounds(window)?;
-    let safe = clamp_bounds(current, work_area(window, false)?);
+    let safe = clamp_bounds(current, placement_area(window)?);
     if safe != current {
         window.set_position(tauri::PhysicalPosition::new(safe.x, safe.y)).map_err(|e| e.to_string())?;
     }
-    window.set_always_on_top(true).map_err(|e| e.to_string())
+    if !window.is_always_on_top().map_err(|e| e.to_string())? {
+        window.set_always_on_top(true).map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 pub fn restore_ticker_position(window: &tauri::WebviewWindow, db: &Database, reset: bool) -> Result<(), String> {

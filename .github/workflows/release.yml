@@ -1,10 +1,12 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - 'v*'
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 已人工确认构建的版本标签（例如 v1.5.3）；仅生成草稿，发布需手动确认
+        required: true
+        type: string
 
 jobs:
   publish:
@@ -25,6 +27,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -77,9 +81,11 @@ jobs:
 
       - name: Extract changelog for release body
         id: changelog
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
         shell: bash
         run: |
-          VERSION="${{ github.ref_name }}"
+          VERSION="$RELEASE_TAG"
           node scripts/extract-changelog.mjs "$VERSION" > "$RUNNER_TEMP/changelog.md" 2>/dev/null || echo "No changelog entry for $VERSION" > "$RUNNER_TEMP/changelog.md"
           echo "body<<EOF" >> $GITHUB_OUTPUT
           cat "$RUNNER_TEMP/changelog.md" >> $GITHUB_OUTPUT
@@ -91,20 +97,22 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "${{ github.ref_name }}"
+          tagName: ${{ inputs.tag }}
+          releaseName: "${{ inputs.tag }}"
           releaseBody: ${{ steps.changelog.outputs.body }}
-          releaseDraft: false
+          releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
 
       - name: Create portable zip (Windows)
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
         if: matrix.platform == 'windows-latest'
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
           $src = "src-tauri/target/x86_64-pc-windows-msvc/release"
-          $ver = "${{ github.ref_name }}" -replace '^v', ''
+          $ver = $env:RELEASE_TAG -replace '^v', ''
           $staging = "portable/quant-desktop"
           $null = New-Item -ItemType Directory -Force -Path $staging
           Copy-Item "$src/quant-desktop.exe" -Destination "$staging/"
@@ -118,7 +126,8 @@ jobs:
         if: matrix.platform == 'windows-latest'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
+          tag_name: ${{ inputs.tag }}
           token: ${{ secrets.GITHUB_TOKEN }}
+          draft: true
           make_latest: false
           files: src-tauri/target/x86_64-pc-windows-msvc/release/bundle/quant-desktop_*_x64-portable.zip

@@ -66,6 +66,21 @@ mod tests {
     use super::*;
 
     #[test]
+    fn taskbar_placement_survives_recovery_width_toggle_and_top_resize() {
+        // 125% DPI, two stock rows, bottom taskbar occupying the last 60 pixels.
+        let screen = Bounds { x: -1920, y: 0, width: 1920, height: 1080 };
+        let current = Bounds { x: -500, y: 1022, width: 343, height: 58 };
+        assert_eq!(clamp_bounds(current, screen), current);
+        let hidden = width_bounds(current, 251, true, screen);
+        assert_eq!(hidden.y, current.y);
+        assert_eq!(hidden.x + hidden.width as i32, current.x + current.width as i32);
+        let (_, taller) = resize_bounds(current, (18, 10), 1.25, 4, ResizeEdge::Top, screen);
+        assert_eq!(taller.y + taller.height as i32, 1080);
+        let (_, restored) = resize_bounds(taller, (18, 10), 1.25, 2, ResizeEdge::Top, screen);
+        assert_eq!(restored, current);
+    }
+
+    #[test]
     fn market_header_preserves_stock_rows_and_fractional_dpi_anchor() {
         let area = Bounds { x: 0, y: 0, width: 1920, height: 1040 };
         let current = Bounds { x: 1400, y: 900, width: 251, height: 76 };
@@ -117,7 +132,7 @@ mod tests {
     }
 
     #[test]
-    fn bottom_resize_keeps_top_at_fractional_dpi_and_limits_at_taskbar() {
+    fn bottom_resize_keeps_top_at_fractional_dpi_and_limits_at_screen_edge() {
         let area = Bounds { x: -1920, y: 80, width: 1920, height: 960 };
         let current = Bounds { x: -600, y: 800, width: 400, height: 56 };
         let (rows, next) = resize_bounds(current, (18, 9), 1.25, 30, ResizeEdge::Bottom, area);
@@ -129,7 +144,7 @@ mod tests {
     }
 
     #[test]
-    fn recovery_excludes_taskbar_on_every_edge_and_handles_negative_monitor_origin() {
+    fn recovery_clamps_to_selected_area_and_handles_negative_monitor_origin() {
         let area = Bounds { x: -1840, y: 40, width: 1840, height: 1000 };
         for (x, y) in [(-1920, 0), (-20, 1000), (2000, 3000)] {
             let result = clamp_bounds(Bounds { x, y, width: 325, height: 91 }, area);
